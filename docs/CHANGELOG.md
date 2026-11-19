@@ -28,6 +28,9 @@
 - Node **24 LTS** instead of 20: Node 20 reached end-of-life in April 2026 (recorded in DECISIONS).
 - `MARKET_TZ` is a code constant (IST is an exchange fact, and the DB CHECK encodes it), not a `.env` tunable.
 
+### Fixed
+- CI backend job: GitHub's runner image doesn't auto-create a PostgreSQL cluster on install, so the workflow now runs `pg_createcluster 18 main` and writes its settings to `conf.d`. `actions/checkout` bumped to v5 (Node 20 deprecation).
+
 ### Known / deferred
 - `npm audit` reports PostCSS advisories in the copy bundled inside `next@15.5.x`. The fix requires Next 16 (breaks the locked Next 15). The affected code runs only at build time, on our own CSS. Revisit when upgrading.
 - `ticks` retention (90 days by default) must exceed the Parquet export lag once Phase 1 adds the cold store.

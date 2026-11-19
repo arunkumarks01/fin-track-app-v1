@@ -29,7 +29,7 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install PostgreSQL ${{ env.PG_MAJOR }} + TimescaleDB (native)
         working-directory: .
@@ -49,18 +49,26 @@ jobs:
             "postgresql-${PG_MAJOR}" \
             "timescaledb-2-postgresql-${PG_MAJOR}=${TIMESCALEDB_VERSION}" \
             "timescaledb-2-loader-postgresql-${PG_MAJOR}=${TIMESCALEDB_VERSION}"
-          # run only our PG major, on 5432
+          # The runner image disables auto-creation of a main cluster, so create one
+          # explicitly. Drop any other-major cluster first so ours owns port 5432.
           for c in $(pg_lsclusters -h | awk -v m="$PG_MAJOR" '$1 != m {print $1"/"$2}'); do
             sudo pg_dropcluster --stop "${c%/*}" "${c#*/}"
           done
-          sudo pg_lsclusters
-          conf="/etc/postgresql/${PG_MAJOR}/main/postgresql.conf"
-          echo "shared_preload_libraries = 'timescaledb'" | sudo tee -a "$conf"
-          echo "timescaledb.telemetry_level = off" | sudo tee -a "$conf"
+          if ! pg_lsclusters -h | awk -v m="$PG_MAJOR" '$1 == m && $2 == "main"' | grep -q .; then
+            sudo pg_createcluster "$PG_MAJOR" main --port=5432
+          fi
+          conf_d="/etc/postgresql/${PG_MAJOR}/main/conf.d"
+          sudo install -d "$conf_d"
+          sudo tee "$conf_d/fintrack-ci.conf" >/dev/null <<'CONF'
+          shared_preload_libraries = 'timescaledb'
+          timescaledb.telemetry_level = off
           # mirror the VPS (Ubuntu dfsg = Apache-only build): TSL-only APIs must fail here too
-          echo "timescaledb.license = 'apache'" | sudo tee -a "$conf"
-          echo "port = 5432" | sudo tee -a "$conf"
-          sudo systemctl restart "postgresql@${PG_MAJOR}-main"
+          timescaledb.license = 'apache'
+          port = 5432
+          CONF
+          sudo pg_ctlcluster "$PG_MAJOR" main restart
+          sudo pg_lsclusters
+          pg_isready -h localhost -p 5432 -t 30
 
       - name: Provision test role + database (mirrors the VPS layout)
         working-directory: .
@@ -106,7 +114,7 @@ jobs:
       BACKEND_URL: http://127.0.0.1:8000
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v4
         with:
