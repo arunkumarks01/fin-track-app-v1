@@ -1,0 +1,127 @@
+# FinTrack v2 CI — gates merges (ARCHITECTURE §2 law 7).
+# Native only: TimescaleDB is installed on the runner from the official apt repos.
+# No Docker, no `services:` containers (D23). Versions pinned to match the VPS, and
+# the license forced to 'apache' so CI rejects TSL-only features exactly like the VPS (D25).
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PG_MAJOR: "18"
+      TIMESCALEDB_VERSION: "2.25.1~ubuntu24.04-1803"
+      # throwaway credentials for the runner-local DB only
+      TEST_DATABASE_URL: postgresql://fintrack_v2:ci-only-password@localhost:5432/fintrack_v2_test
+      REQUIRE_DB_TESTS: "1"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL ${{ env.PG_MAJOR }} + TimescaleDB (native)
+        working-directory: .
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/pgdg.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          curl -fsSL https://packagecloud.io/timescale/timescaledb/gpgkey \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/timescaledb.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/timescaledb.gpg] https://packagecloud.io/timescale/timescaledb/ubuntu/ noble main" \
+            | sudo tee /etc/apt/sources.list.d/timescaledb.list
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends \
+            "postgresql-${PG_MAJOR}" \
+            "timescaledb-2-postgresql-${PG_MAJOR}=${TIMESCALEDB_VERSION}" \
+            "timescaledb-2-loader-postgresql-${PG_MAJOR}=${TIMESCALEDB_VERSION}"
+          # run only our PG major, on 5432
+          for c in $(pg_lsclusters -h | awk -v m="$PG_MAJOR" '$1 != m {print $1"/"$2}'); do
+            sudo pg_dropcluster --stop "${c%/*}" "${c#*/}"
+          done
+          sudo pg_lsclusters
+          conf="/etc/postgresql/${PG_MAJOR}/main/postgresql.conf"
+          echo "shared_preload_libraries = 'timescaledb'" | sudo tee -a "$conf"
+          echo "timescaledb.telemetry_level = off" | sudo tee -a "$conf"
+          # mirror the VPS (Ubuntu dfsg = Apache-only build): TSL-only APIs must fail here too
+          echo "timescaledb.license = 'apache'" | sudo tee -a "$conf"
+          echo "port = 5432" | sudo tee -a "$conf"
+          sudo systemctl restart "postgresql@${PG_MAJOR}-main"
+
+      - name: Provision test role + database (mirrors the VPS layout)
+        working-directory: .
+        run: |
+          set -euo pipefail
+          sudo -u postgres psql -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE fintrack_v2 LOGIN PASSWORD 'ci-only-password'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          CREATE DATABASE fintrack_v2_test OWNER fintrack_v2;
+          \c fintrack_v2_test
+          CREATE EXTENSION timescaledb;
+          SELECT extversion FROM pg_extension WHERE extname = 'timescaledb';
+          SHOW timescaledb.license;
+          SQL
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked
+
+      - name: Ruff (lint)
+        run: uv run ruff check . --output-format github
+
+      - name: Ruff (format)
+        run: uv run ruff format --check .
+
+      - name: Mypy (strict)
+        run: uv run mypy
+
+      - name: Pytest (unit + DB integration)
+        run: uv run pytest --cov --cov-report=term
+
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      BACKEND_URL: http://127.0.0.1:8000
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: Prettier
+        run: npm run format:check
+      - name: tsc --strict
+        run: npm run typecheck
+      - name: Vitest
+        run: npm test
+      - name: Next build
+        run: npm run build

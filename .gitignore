@@ -1,0 +1,32 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# node / next
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+frontend/coverage/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
+
+# data (Parquet cold store etc. lives outside git)
+data/
