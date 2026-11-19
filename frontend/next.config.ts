@@ -9,7 +9,11 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   async rewrites() {
-    return [{ source: "/api/:path*", destination: `${backendUrl}/:path*` }];
+    return [
+      // backend liveness lives at the root; every other backend route is under /api
+      { source: "/api/health", destination: `${backendUrl}/health` },
+      { source: "/api/:path*", destination: `${backendUrl}/api/:path*` },
+    ];
   },
 };
 

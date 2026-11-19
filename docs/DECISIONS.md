@@ -37,6 +37,10 @@
 | D26 | Notification channels | **Telegram only** for v2; email/push later |
 | DEC-N | Node runtime | **Node 24 LTS** (Node 20 reached end-of-life in April 2026). Pinned via `.nvmrc` + `engines` (2026-11-19) |
 | DEC-DB | Dev/test database host | Existing **VPS TimescaleDB 2.25.1 / PG 18**, `fintrack_v2` + `fintrack_v2_test` DBs, least-privilege role, reached via SSH tunnel; CI installs the same versions natively on the runner **with `timescaledb.license = 'apache'`**, so TSL-only APIs fail in CI exactly as on the VPS (2026-11-19) |
+| DEC-K1 | Kite Connect app | **Reuse v1's Kite app, redirect repointed to v2** (`http://127.0.0.1:8000/api/kite/callback`); v1's Kite login stops working (2026-11-19) |
+| DEC-K2 | Kite client | **`httpx` direct** (async, owned retry/rate-limit/fail-closed paths), not the sync `kiteconnect` lib; WebSocket client chosen at Phase 1d. Per-request windows (Kite doesn't publish them; v1-proven): minute/3m 60d · 5m 100d · 15m/30m 200d · 60m 400d · day 2000d — config tunables (2026-11-19) |
+| DEC-V1 | v1 candle data | **Re-ingest everything from Kite; v1's data is not imported or used** (2026-11-19) |
+| DEC-P1 | Phase 1 delivery | **Whole of Phase 1 approved**, delivered as slices 1a (auth, instruments, daily, validation, coverage gate) → 1b (intraday + rollups) → 1c (corporate actions + adjust-on-read) → 1d (ticks, options chain, Parquet) → 1e (reference data — **sources proposed and approved before build**) (2026-11-19) |
 | DEC-B | Corporate actions source | **Kite (splits/dividends) primary**, NSE corporate-actions feed as supplement/fallback |
 
 ## Standing architectural locks (from ARCHITECTURE.md)

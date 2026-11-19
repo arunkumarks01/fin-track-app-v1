@@ -1,4 +1,5 @@
 import { HealthPanel } from "./health-panel";
+import { IngestPanel } from "./ingest-panel";
 
 export default function Home() {
   return (
@@ -10,10 +11,15 @@ export default function Home() {
         </span>
       </header>
       <p className="text-neutral-400">
-        Phase 0 scaffold. No market data, scores or trades exist yet — by design.
+        Phase 1 — data foundation. No scores or trades exist yet: nothing is scored until the
+        coverage gate passes.
       </p>
       <section aria-label="Backend health" className="rounded-lg border border-neutral-800 p-4">
         <HealthPanel />
+      </section>
+      <section aria-label="Data foundation" className="rounded-lg border border-neutral-800 p-4">
+        <h2 className="mb-3 text-base font-medium">Data foundation</h2>
+        <IngestPanel />
       </section>
     </main>
   );

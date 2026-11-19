@@ -10,8 +10,10 @@ The plan lives in `docs/` and is **authoritative**: `ARCHITECTURE.md` (laws + de
 `BUILD_PLAN.md` (phases + exit gates), `TEST_PLAN.md`, `UX_DESIGN.md`, `TOOLING.md`.
 Record every change in `docs/CHANGELOG.md`.
 
-**Current phase: 0 (scaffold) complete.** Phases are gated: do not start the next phase (in
-particular Phase 1 — any Kite call, ingestion, or populating candles) without explicit approval.
+**Current phase: 1 (data foundation), approved as a whole (DEC-P1), built in slices 1a→1e.**
+Slice 1a (Kite auth, instruments/universe, daily extractor, validation, coverage gate) is built.
+Before building 1e (reference data), propose its sources and wait for approval. Phase 2
+(indicators/scoring) must not start until the coverage gate is green on real data.
 
 ## Non-negotiable laws (ARCHITECTURE §2)
 
@@ -98,6 +100,34 @@ plus DSN passwords, bearer tokens and key=value credentials in the fully formatt
 
 **Cache** (`app/core/cache.py`): `Cache` Protocol + bounded-LRU `MemoryCache` with TTLs on an
 injected `Clock` (`app/core/clock.py`). Never a source of truth.
+
+**Kite (Phase 1a)** — `app/broker/kite/`:
+- `auth.py` + `app/api/kite.py`: the v1 OAuth flow (checksum = SHA-256(key+request_token+secret),
+  expiry at the next 06:00 IST) plus a one-time `state` nonce sent via Kite's `redirect_params`.
+  The callback rejects logins this app didn't start.
+- `session.py`: the token lives in memory + `app.kite_session` (restart recovery, masked in logs).
+  `current()` returns None once expired (fail closed).
+- `client.py`: async `httpx` (DEC-K2), token-bucket limits (3/s historical, 10/s other), backoff
+  on 429/5xx/network. **Only `TokenException` invalidates the session**; other 403s, such as
+  `PermissionException`, surface as `KiteRequestError`. Prices are parsed with
+  `json(parse_float=Decimal)` to exact paisa, never floats.
+- Tests never hit the network: `create_app(..., http_transport=httpx.MockTransport(...))`
+  with `tests/fixtures/kite_http.py`.
+
+**Data foundation** — `app/data/`:
+- `instruments.py`: the master is a full snapshot, replaced atomically. The universe is NFO stock-futures
+  underlyings ∩ NSE EQ, plus `UNIVERSE_INDEX_SYMBOLS`. Members are deactivated, never deleted.
+  `symbol` is `EXCHANGE:TRADINGSYMBOL` everywhere.
+- `validate.py`: the gate. Rejects go to `app.ohlcv_quarantine` with a reason and the raw payload.
+  A duplicate trading date quarantines *every* copy; large gaps and missing sessions are
+  flag-but-keep (`app.ohlcv_flags`).
+- `extract_daily.py`: one Kite window per transaction (bars + quarantine + flags + cursor together).
+  Only completed sessions are fetched (`DAILY_BAR_FINAL_AFTER_IST`). The cursor on the newest window
+  advances only to the last bar received. A re-fetched bar that differs from the stored one is
+  quarantined as `conflicts_with_stored`, never overwritten. `KiteAuthError` stops the run.
+- `jobs.py` + `app/api/data.py`: ingestion runs **in-process** (one job at a time) from
+  `POST /api/data/ingest/daily` or `DAILY_INGEST_CRON`. `GET /api/data/coverage` is the
+  Phase-1 gate report (`coverage.py`).
 
 **Frontend**: the browser calls same-origin `/api/*`, which Next rewrites to `BACKEND_URL`
 (`next.config.ts`). Responses are parsed strictly (`src/lib/health.ts`) — an unexpected shape is

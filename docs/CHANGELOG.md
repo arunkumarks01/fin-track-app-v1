@@ -1,6 +1,47 @@
 # Changelog
 
-## [Unreleased] — Phase 0: scaffold & foundations (2026-11-19)
+## [Unreleased] — Phase 1a: data foundation core (2026-11-19)
+
+### Added
+- **Migration 0002**: `instruments`, `universe`, `kite_session`, `ingest_cursor`, `ohlcv_quarantine`, `ohlcv_flags`.
+- **Kite auth** (ported from v1): login URL with a one-time `state` nonce (CSRF), callback token exchange, honest `/api/kite/status` (not_configured / disconnected / expired / connected + hours left), bearer-protected `/api/kite/logout` (local + remote invalidation). The session persists in Postgres plus memory, and the token is masked in logs.
+- **Kite REST client** (`httpx`, DEC-K2): per-endpoint token-bucket rate limits, exponential backoff on 429/5xx/network, fail-closed on `TokenException` only. Exact `Decimal` → paisa parsing.
+- **Instrument master + F&O universe**: atomic snapshot replace; universe = NFO stock-futures underlyings ∩ NSE EQ + 6 configured indices. A missing configured index or a malformed relevant row fails the refresh.
+- **Validation gate**: quarantine with reason + raw payload; duplicate dates quarantine every copy; large-gap / missing-session flags (flag-but-keep).
+- **Daily extractor**: resumable, idempotent, one transaction per Kite window. Never ingests a partial day; picks up late-published bars; revised bars are quarantined, not overwritten; an auth error stops the run.
+- **Coverage report** (the Phase-1 gate): `GET /api/data/coverage` with per-symbol bars / oldest / newest / gap% / staleness / scorable. Checks: ≥95% of symbols with ≥250 clean bars, indices back to 2015, 0 duplicate dates. An empty universe fails.
+- **In-process ingestion jobs**: `POST /api/data/ingest/daily` (bearer, background, one at a time), `GET /api/data/jobs`, scheduled `DAILY_INGEST_CRON` (16:15 IST weekdays).
+- Config: Kite, universe, ingestion, validation and coverage tunables (all in `.env.example`).
+
+### Changed
+- `httpx` moved from dev-only to a runtime dependency (DEC-K2).
+- Decisions recorded: DEC-K1 (reuse v1's Kite app, redirect repointed), DEC-K2, DEC-V1 (re-ingest; v1 data unused), DEC-P1 (Phase 1 sliced 1a–1e).
+
+### Changed: validation v2 (migration 0003), learned from the first real Kite backfill
+- **Legacy daily timestamps:** Kite stamps pre-Dec-2018 daily bars for some symbols at 09:15 IST or other odd times. These are now **re-stamped to 00:00 IST of their IST trading date** and flagged `retimed_ts`, with the original timestamp kept in the flag. If a native 00:00 bar exists for that date, it wins and the re-stamped copy is quarantined. Any other multiplicity quarantines every copy.
+- **Index gaps:** a >`VALIDATION_INDEX_MAX_GAP_PCT` (20%) day-over-day gap on an **index** is quarantined as `index_gap`; indices have no corporate actions. Equities keep flag-but-keep.
+- **Coverage gate:** a symbol is *sufficient* only with ≥250 clean bars **and** ≤`COVERAGE_MAX_WEEKDAY_GAP_PCT` (10%) of weekdays missing; holidays alone are ≈5%. Indices must be both deep and hole-free. Quarantine counts only **unresolved** rows. Re-quarantining the same bad row is deduplicated.
+- **Targeted re-processing:** `POST /api/data/ingest/daily?symbols=…&reset_cursor=true&refresh_universe=false` re-fetches only the listed symbols. Stored bars are never touched; a reset with no explicit symbol list is refused.
+
+### Real-data results (2026-11-19, VPS `fintrack_v2`)
+- **Initial backfill:** 56,249 instruments; universe **224** (218 F&O stocks + 6 indices); **5,69,181** clean daily bars in 672 Kite requests, about 9 minutes, 0 errors. The gate **failed** on NIFTY BANK depth; 4,613 bars across 8 symbols were quarantined for legacy timestamps.
+- **After validation v2 + targeted re-process** (8 symbols, 16 s): 4,592 bars recovered. **Coverage gate PASS**:
+  - 221/224 sufficient (98.7%), all 6 indices from 2015-01-01 with 5.0–5.2% gaps
+  - 0 duplicate dates, 0 stale
+  - **5,73,773** clean daily bars
+- **Still quarantined (correctly):**
+  - MAZDOCK's 8 all-zero pre-listing rows.
+  - 4 trading days (2015-06-29, 07-02, 08-10, 11-11) where Kite sent **two conflicting** off-midnight bars for NIFTY BANK and NIFTY FIN SERVICE; both copies are kept out. The unresolved count is per row, so these 4 days show as 16 rows per index.
+- **Not sufficient (honestly):**
+  - **360ONE, SBICARD, DELHIVERY** carry *ghost history* from a different, earlier security on the same token: a few bars in 2015–2016, then a multi-year gap until their real listing. They are excluded from scoring; removing the ghost segments is a pending decision.
+
+### Fixed
+- `.gitignore` had a bare `data/` rule (meant for a future Parquet dir) that also matched `backend/app/data/`. The data package would have been left out of git, **and ruff silently skipped it** because ruff honours `.gitignore`. The rule is now anchored as `/data/`; ruff covers all 64 files, and 6 lint issues it had been hiding are fixed. Verified by exporting the staged tree to a clean folder and running the full CI suite there.
+
+### Open (to resolve in 1c)
+- Kite's historical candles are believed to be **already split/bonus-adjusted**, which conflicts with "store raw as-traded". Re-adjustments surface as `conflicts_with_stored` quarantine rows rather than overwrites. Slice 1c must settle raw-vs-adjusted against real data.
+
+## Phase 0: scaffold & foundations (2026-11-19)
 
 ### Added
 - **Repo** — `backend/` (uv, Python 3.12) + `frontend/` (Next.js 15, Node 24), root `.env.example`, `.nvmrc`, `CLAUDE.md`.

@@ -29,4 +29,4 @@ frontend/coverage/
 .vscode/
 
 # data (Parquet cold store etc. lives outside git)
-data/
+/data/
