@@ -18,6 +18,7 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.api.admin import router as admin_router
 from app.api.data import router as data_router
 from app.api.health import router as health_router
 from app.api.kite import router as kite_router
@@ -83,7 +84,7 @@ def create_app(
             restored = await sessions.load()
             log.info("kite session %s", "restored" if restored else "not available")
             kite = KiteClient(http, cfg, sessions, clk) if cfg.kite_configured else None
-            ingest = IngestRunner(pool, kite, cfg, clk)
+            ingest = IngestRunner(pool, kite, cfg, clk, http=http)
             scheduler = build_scheduler(cfg)
             register_job(
                 scheduler,
@@ -110,6 +111,7 @@ def create_app(
             app.state.http = http
             app.state.kite_sessions = sessions
             app.state.ingest = ingest
+            app.state.started_at = clk.now()
             log.info("FinTrack v2 %s started (env=%s, PAPER_MODE=true)", __version__, cfg.app_env)
             yield
         finally:
@@ -130,4 +132,5 @@ def create_app(
     app.include_router(health_router)
     app.include_router(kite_router)
     app.include_router(data_router)
+    app.include_router(admin_router)
     return app

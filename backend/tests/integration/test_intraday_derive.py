@@ -17,7 +17,7 @@ import pytest
 
 from app.core.money import rupees_to_paisa
 from app.core.tradingdate import MARKET_TZ
-from app.data.extract_intraday import refresh_exchange_sessions, run_intraday_backfill
+from app.data.extract_intraday import run_intraday_backfill
 from app.data.instruments import UniverseMember, sync_universe
 from app.data.intraday import derive_bars
 from app.data.intraday_coverage import completeness, review_sessions
@@ -132,41 +132,31 @@ async def test_unsupported_timeframe_rejected(loaded: Any) -> None:
         await derive_bars(loaded, "NSE:NIFTY 50", "7m", NORMAL, NORMAL)
 
 
-async def test_completeness_is_calendar_aware(loaded: Any) -> None:
+async def test_completeness_needs_an_instruments_own_history(loaded: Any) -> None:
+    """Per-instrument calendar (DEC-1B-CAL): two sessions are too few to know an instrument's
+    own norm, so RELIANCE's 360-minute day is 'unknown' — never guessed complete or short.
+    (The real-data cases — a genuine short session, the auction step, outage days — are in
+    test_session_calendar / test_adjustments_db.)"""
     by = {c.symbol: c for c in await completeness(loaded)}
-    nifty, rel = by["NSE:NIFTY 50"], by["NSE:RELIANCE"]
-    assert (nifty.complete, nifty.short, nifty.unknown) == (2, 0, 0)  # 375 day + 60-bar muhurat
-    # RELIANCE: muhurat 60/60 complete; 2026-11-18 is a real 15-minute gap → flagged, not hidden
-    assert (rel.complete, rel.short, rel.missing_minutes) == (1, 1, 15)
+    for sym in ("NSE:NIFTY 50", "NSE:RELIANCE"):
+        c = by[sym]
+        assert (c.sessions, c.unknown, c.complete, c.short, c.excess) == (2, 2, 0, 0, 0), sym
     review = await review_sessions(loaded, "NSE:RELIANCE")
-    assert review == [
-        {
-            "date": "2026-11-18",
-            "bars": 360,
-            "expected": 375,
-            "status": "short",
-            "first": "2026-11-18T03:45:00+00:00",
-            "last": "2026-11-18T09:44:00+00:00",
-        }
+    assert [(r["date"], r["bars"], r["expected"], r["status"]) for r in review] == [
+        ("2026-11-18", 360, None, "unknown"),
+        (MUHURAT.isoformat(), 60, None, "unknown"),
     ]
-    expected = await loaded.fetch(
-        "SELECT session_date, expected_minutes FROM app.exchange_sessions ORDER BY 1"
+    # the exchange calendar still supplies each session's real OPEN (time_bucket origin)
+    opens = await loaded.fetch(
+        "SELECT session_date, session_open FROM app.exchange_sessions ORDER BY 1"
     )
-    assert [(r["session_date"], r["expected_minutes"]) for r in expected] == [
-        (MUHURAT, 60),
-        (NORMAL, 375),
+    assert [(r["session_date"], r["session_open"].astimezone(IST).time()) for r in opens] == [
+        (MUHURAT, time(18, 0)),
+        (NORMAL, time(9, 15)),
     ]
 
 
-async def test_unknown_when_benchmark_has_no_data(loaded: Any, test_dsn: str) -> None:
-    await loaded.execute(
-        """DELETE FROM app.intraday_sessions WHERE session_date = $1 AND sid =
-           (SELECT sid FROM app.instrument_ids WHERE symbol = 'NSE:NIFTY 50')""",
-        MUHURAT,
-    )
-    await refresh_exchange_sessions(
-        loaded, build_settings(database_url=test_dsn), datetime(2026, 11, 19, tzinfo=IST)
-    )
+async def test_sessions_without_a_status_are_unknown_not_guessed(loaded: Any) -> None:
+    await loaded.execute("TRUNCATE app.intraday_session_status")
     rel = next(c for c in await completeness(loaded) if c.symbol == "NSE:RELIANCE")
-    assert rel.unknown == 1  # not guessed as complete or short
-    assert rel.complete == 0
+    assert (rel.unknown, rel.complete, rel.short) == (2, 0, 0)

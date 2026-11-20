@@ -24,8 +24,9 @@ pytestmark = pytest.mark.db
 
 IST = MARKET_TZ
 START = date(2024, 1, 1)
-# 2024-03-15 is a Friday; 17:00 IST is after the daily bar is final
-EVENING = datetime(2024, 3, 15, 17, 0, tzinfo=IST)
+# 2024-03-15 is a Friday; its 1d bar is final from Sat 08:15 IST (Kite publishes the official
+# close overnight), so "now" is the next morning
+EVENING = datetime(2024, 3, 16, 9, 0, tzinfo=IST)
 MEMBERS = [UniverseMember("NSE:AAA", 101, "equity"), UniverseMember("NSE:BBB", 202, "equity")]
 
 
@@ -86,8 +87,19 @@ async def test_backfill_then_idempotent_rerun(pool: Any, db: Any, test_dsn: str)
     assert all(c[2].time() == time(0) and c[3].time() == time(23, 59, 59) for c in src.calls)
 
     again = await run_daily_backfill(pool, src, s, clock)
-    assert [r.status for r in again.results] == ["up_to_date", "up_to_date"]
-    assert len(src.calls) == 6  # no new requests
+    # nothing new — but the newest stored session is re-fetched once per symbol: that is the
+    # drift re-check (Kite may re-adjust history), and it is recorded as checked
+    assert [(r.status, r.inserted, r.already_stored) for r in again.results] == [
+        ("ok", 0, 1),
+        ("ok", 0, 1),
+    ]
+    assert len(src.calls) == 8
+    assert {c[2].date() for c in src.calls[6:]} == {date(2024, 3, 15)}
+    checks = await db.fetch("SELECT symbol, checked_on FROM app.adjustment_checks ORDER BY 1")
+    assert [(r["symbol"], r["checked_on"]) for r in checks] == [
+        ("NSE:AAA", date(2024, 3, 15)),
+        ("NSE:BBB", date(2024, 3, 15)),
+    ]
     dupes = await db.fetchval(
         "SELECT count(*) - count(DISTINCT (symbol, ts)) FROM app.ohlcv_candles"
     )
@@ -101,6 +113,10 @@ async def test_partial_bar_never_fetched_before_final_time(
     morning = FrozenClock(datetime(2024, 3, 15, 11, 0, tzinfo=IST))  # market open
     await run_daily_backfill(pool, src, settings_for(test_dsn), morning, symbols=["NSE:AAA"])
     assert src.calls[-1][3].date() == date(2024, 3, 14)
+    assert await _count(db, "NSE:AAA") == 54
+    # regression (1a bug, 2026-11-19): the same evening the 1d bar is still provisional
+    evening = FrozenClock(datetime(2024, 3, 15, 18, 25, tzinfo=IST))
+    await run_daily_backfill(pool, src, settings_for(test_dsn), evening, symbols=["NSE:AAA"])
     assert await _count(db, "NSE:AAA") == 54
 
 
@@ -180,7 +196,8 @@ async def test_late_published_bar_is_fetched_next_run(pool: Any, db: Any, test_d
     src.series[101] = full  # now it is
     await run_daily_backfill(pool, src, s, clock, symbols=["NSE:AAA"])
     assert await _count(db, "NSE:AAA") == 55
-    assert src.calls[-1][2].date() == date(2024, 3, 15)
+    # resumes ON the newest stored session (the drift re-check), which brings 03-15 with it
+    assert src.calls[-1][2].date() == date(2024, 3, 14)
 
 
 async def test_empty_universe_fails_closed(test_dsn: str, db: Any) -> None:

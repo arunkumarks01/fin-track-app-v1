@@ -11,9 +11,12 @@ The plan lives in `docs/` and is **authoritative**: `ARCHITECTURE.md` (laws + de
 Record every change in `docs/CHANGELOG.md`.
 
 **Current phase: 1 (data foundation), approved as a whole (DEC-P1), built in slices 1a→1e.**
-Slice 1a (Kite auth, instruments/universe, daily extractor, validation, coverage gate) is built.
-Before building 1e (reference data), propose its sources and wait for approval. Phase 2
-(indicators/scoring) must not start until the coverage gate is green on real data.
+Slices 1a (Kite auth, universe, daily extractor, validation, coverage gate), 1b (1-minute store +
+on-read derivation) and 1c (NSE archive, measured adjustments, drift re-check) are built.
+**The Phase-1 data-coverage gate was opened by the user on 2026-11-20 (DEC-GATE1).** Next: lock the five
+1d decisions (deps, tick schema/budget, chain scope, raw-vs-derived greeks, unassigned items) against the
+measured probe numbers, then build 1d. Before building 1e (reference data), propose its sources and wait
+for approval. Open, non-blocking: the 2015 data policy and the 'corroborated' rule (DEC-GATE1).
 
 ## Non-negotiable laws (ARCHITECTURE §2)
 
@@ -122,12 +125,33 @@ injected `Clock` (`app/core/clock.py`). Never a source of truth.
   A duplicate trading date quarantines *every* copy; large gaps and missing sessions are
   flag-but-keep (`app.ohlcv_flags`).
 - `extract_daily.py`: one Kite window per transaction (bars + quarantine + flags + cursor together).
-  Only completed sessions are fetched (`DAILY_BAR_FINAL_AFTER_IST`). The cursor on the newest window
+  A 1d bar is final only the NEXT morning (`DAILY_BAR_FINAL_NEXT_DAY_IST`, 08:15 — Kite publishes the
+  official close overnight; same-evening bars were provisional, DEC-1C-FINAL). The cursor on the newest window
   advances only to the last bar received. A re-fetched bar that differs from the stored one is
   quarantined as `conflicts_with_stored`, never overwritten. `KiteAuthError` stops the run.
 - `jobs.py` + `app/api/data.py`: ingestion runs **in-process** (one job at a time) from
   `POST /api/data/ingest/daily` or `DAILY_INGEST_CRON`. `GET /api/data/coverage` is the
   Phase-1 gate report (`coverage.py`).
+
+**Adjustments (Phase 1c, DEC-B revised — measure, don't model)** — `app/data/nse_archive.py`,
+`nse_load.py`, `adjustment.py`, `drift.py`, `repair.py`:
+- Kite's candles are ALREADY adjusted (more richly than NSE's action list, not always alike across
+  grains). Stored Kite data = the adjusted view, never rewritten. As-traded daily = NSE bhavcopy
+  (`app.nse_bhav`). Kite's map is **affine** (it subtracts dividends for part of history):
+  Kite = a·NSE + b, **measured** per window by a minimax fit (worst residual ≤ half the window's measured
+  Kite price grid, never below ±2.5 paisa, or it is not accepted), stepping only at matching NSE actions (`app.adjustment_days`, `adjustment_events`), with
+  separate ratios for the 1m grain and volume; as-traded 1m = `app.minute_as_traded()` = (K÷G − b)÷a.
+  Never model prices from `app.corporate_actions` — it only explains steps.
+- NSE names are resolved per day via `app.symbol_changes` (NSE `symbolchange.csv`); official rows prefer
+  EQ, then BE/BZ (trade-for-trade). Bumping `PARSE_VERSION` re-scans older days once (missing rows only).
+- NSE source = the static archive (`nsearchives.nseindia.com` PR zips, Bc + Pd members) with an honest
+  User-Agent. A 403 stops the load; **never impersonate a browser or work around a refusal/CAPTCHA**.
+- Each catch-up re-fetches the newest stored session (drift re-check): consistent rescaling →
+  `app.adjustment_drift`; the only bar-rewrite path is the audited `repair.py` (`app.data_repairs`).
+- Since 2026-08-03 NSE equities have a closing auction (SEBI circular 16 Jan 2026, HO/47/11/11(3)2025-MRD-POD2/I/2765/2026;
+  text not yet read): their 1m series ends 15:14 (indices 15:29), rolled out per instrument.
+- Daily gate gap check is listing-aware: bars before a verified listing (gap ≥ 60 NSE sessions with no
+  NSE trading) are flagged `pre_listing` and not counted.
 
 **Intraday (Phase 1b, DEC-1B)** — `app/data/intraday.py`, `extract_intraday.py`, `intraday_coverage.py`:
 - `app.ohlcv_1m` is the **only** stored intraday source (int4 paisa, smallint `sid` from
@@ -139,8 +163,9 @@ injected `Clock` (`app/core/clock.py`). Never a source of truth.
   bars exactly.
 - The extractor fetches newest-first in round-robin windows, is resumable, and stops on
   `INTRADAY_DB_BUDGET_GB`.
-- Completeness compares to the benchmark's minutes that session (no hardcoded 375); shortfalls
-  are flagged for review, never quarantined.
+- Completeness is **per instrument** (DEC-1B-CAL, `app/data/session_calendar.py`): each session vs the
+  instrument's own norm, re-baselined on a persistent step-change (the 2026 closing auction 375→360),
+  with a market-wide short-day floor; never a benchmark/percentile. Shortfalls are flagged, never quarantined.
 - 1d candles stay Kite-native (the official close is not the last 1m close).
 
 **Frontend**: the browser calls same-origin `/api/*`, which Next rewrites to `BACKEND_URL`

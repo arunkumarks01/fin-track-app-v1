@@ -6,7 +6,8 @@ window per transaction — a crash never leaves a half-written window or a curso
 the data.
 
 Honesty rules:
-- Today's bar is partial until DAILY_BAR_FINAL_AFTER_IST; only completed sessions are fetched.
+- A session's 1d bar is provisional until Kite publishes the official close overnight; only
+  sessions final under DAILY_BAR_FINAL_NEXT_DAY_IST (D+1 at that IST time) are fetched.
 - The cursor on the newest window advances only to the last bar actually received, so a
   bar Kite publishes late is fetched next run instead of being skipped forever.
 - A re-fetched bar that differs from the stored one is quarantined ('conflicts_with_stored');
@@ -27,6 +28,7 @@ from app.broker.kite.client import KiteAuthError, KiteError
 from app.core.clock import Clock
 from app.core.config import Settings
 from app.core.tradingdate import MARKET_TZ, canonical_daily_ts, trading_date_of
+from app.data.drift import proportional_ratio, record_check, record_drift
 from app.data.validate import Bar, PrevBar, Rejected, Validated, validate_daily
 
 log = logging.getLogger(__name__)
@@ -68,13 +70,30 @@ class RunReport:
         return out
 
 
-def last_completed_session(now: datetime, final_after: time) -> date:
-    """Latest weekday whose daily bar is final (holidays just yield no bar)."""
-    local = now.astimezone(MARKET_TZ)
-    d = local.date() if local.time() >= final_after else local.date() - timedelta(days=1)
+def _weekday_on_or_before(d: date) -> date:
     while d.weekday() >= 5:
         d -= timedelta(days=1)
     return d
+
+
+def last_completed_session(now: datetime, final_after: time) -> date:
+    """Latest weekday whose bars are final the SAME day after `final_after` (1-minute bars).
+    Holidays just yield no bars."""
+    local = now.astimezone(MARKET_TZ)
+    d = local.date() if local.time() >= final_after else local.date() - timedelta(days=1)
+    return _weekday_on_or_before(d)
+
+
+def last_final_daily_session(now: datetime, final_next_day: time) -> date:
+    """Latest weekday D whose 1d bar is final: from D+1 at `final_next_day` IST (Kite
+    publishes the official close overnight; a same-evening 1d bar is provisional)."""
+    local = now.astimezone(MARKET_TZ)
+    shifted = local - timedelta(
+        hours=final_next_day.hour,
+        minutes=final_next_day.minute,
+        seconds=final_next_day.second,
+    )
+    return _weekday_on_or_before(shifted.date() - timedelta(days=1))
 
 
 def date_windows(start: date, end: date, max_days: int) -> list[tuple[date, date]]:
@@ -136,6 +155,10 @@ async def _set_cursor(
     )
 
 
+def _date(ts: datetime) -> date:
+    return ts.astimezone(MARKET_TZ).date()
+
+
 def _quarantine_row(r: Rejected, now: datetime) -> tuple[Any, ...]:
     return (
         r.symbol,
@@ -149,8 +172,18 @@ def _quarantine_row(r: Rejected, now: datetime) -> tuple[Any, ...]:
     )
 
 
-async def _commit_window(conn: Any, v: Validated, now: datetime) -> tuple[int, int, list[Rejected]]:
-    """Insert new bars; detect conflicts with stored bars. Returns (inserted, same, conflicts)."""
+async def _commit_window(
+    conn: Any,
+    v: Validated,
+    now: datetime,
+    check_ts: datetime | None = None,
+    tol_paisa: float = 0.0,
+) -> tuple[int, int, list[Rejected]]:
+    """Insert new bars; detect conflicts with stored bars. Returns (inserted, same, conflicts).
+
+    `check_ts` is the newest stored bar, re-fetched on purpose (drift re-check): if it comes
+    back scaled by one consistent ratio, Kite re-adjusted history — that is recorded as drift
+    (the stored bar is kept as is), not quarantined as a conflict."""
     conflicts: list[Rejected] = []
     inserted = same = 0
     if v.clean:
@@ -171,6 +204,16 @@ async def _commit_window(conn: Any, v: Validated, now: datetime) -> tuple[int, i
                 fresh.append(b)
             elif stored == b.values():
                 same += 1
+                if b.ts == check_ts:
+                    await record_check(conn, b.symbol, TIMEFRAME, _date(b.ts), now)
+            elif (
+                b.ts == check_ts
+                and (ratio := proportional_ratio([(stored, b.values())], tol_paisa)) is not None
+            ):
+                same += 1
+                await record_drift(conn, b.symbol, TIMEFRAME, _date(b.ts), ratio, now)
+                await record_check(conn, b.symbol, TIMEFRAME, _date(b.ts), now)
+                log.warning("daily %s: Kite re-adjusted history x%.6f", b.symbol, ratio)
             else:
                 conflicts.append(
                     Rejected(
@@ -219,10 +262,12 @@ async def ingest_symbol(
     kind: str = "equity",
 ) -> SymbolResult:
     result = SymbolResult(symbol, "ok")
-    end = last_completed_session(clock.now(), settings.daily_bar_final_after_ist)
+    end = last_final_daily_session(clock.now(), settings.daily_bar_final_next_day_ist)
     async with pool.acquire() as conn:
         resume = await _cursor(conn, symbol)
-    start = settings.ingest_daily_start if resume is None else resume + timedelta(days=1)
+    # resume ON the newest stored session: re-fetching it is the drift re-check (Kite may
+    # have re-adjusted history since) — one bar, no extra request
+    start = settings.ingest_daily_start if resume is None else resume
     if start > end:
         result.status = "up_to_date"
         return result
@@ -259,7 +304,10 @@ async def ingest_symbol(
                 is_index=kind == "index",
                 index_max_gap_pct=settings.validation_index_max_gap_pct,
             )
-            inserted, same, conflicts = await _commit_window(conn, v, now)
+            check_ts = canonical_daily_ts(resume, MARKET_TZ) if resume is not None else None
+            inserted, same, conflicts = await _commit_window(
+                conn, v, now, check_ts, settings.adj_tolerance_paisa
+            )
             if is_latest:
                 covered = max((b.ts for b in v.clean), default=None)
             else:

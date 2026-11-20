@@ -28,6 +28,8 @@ def build_settings(**overrides: Any) -> Settings:
         "app_env": "test",
         "api_auth_token": TEST_TOKEN,
         "database_url": "postgresql://u:p@localhost:5432/unused_test",
+        # the daily job's NSE-archive chain is exercised by its own tests, not every daily test
+        "nse_archive_after_daily": False,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)

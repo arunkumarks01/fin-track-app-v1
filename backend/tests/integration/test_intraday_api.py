@@ -96,6 +96,8 @@ async def test_intraday_ingest_bars_and_completeness_end_to_end(db: Any, test_ds
             assert job["name"] == "intraday_ingest"
             assert job["status"] == "ok", job
             assert job["result"]["intraday"]["inserted"] == 375 + 360 + 60 + 60
+            runs = (await c.get("/api/admin/overview")).json()["runs"]
+            assert [(r["name"], r["status"]) for r in runs] == [("intraday_ingest", "ok")]
 
             bars = (
                 await c.get(
@@ -126,6 +128,8 @@ async def test_intraday_ingest_bars_and_completeness_end_to_end(db: Any, test_ds
                 await c.get("/api/data/coverage/intraday", params={"review": "NSE:RELIANCE"})
             ).json()
             assert cov["summary"]["minute_bars"] == 855
-            assert cov["summary"]["short_sessions"] == 1
-            assert cov["summary"]["missing_minutes"] == 15
-            assert cov["review"]["sessions"][0]["status"] == "short"
+            # per-instrument calendar: 2 sessions per symbol are too few to know a norm →
+            # unknown, never guessed (DEC-1B-CAL)
+            assert cov["summary"]["unknown_sessions"] == cov["summary"]["sessions"]
+            assert cov["summary"]["short_sessions"] == 0
+            assert cov["review"]["sessions"][0]["status"] == "unknown"

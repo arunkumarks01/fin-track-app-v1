@@ -111,8 +111,12 @@ class Settings(BaseSettings):
         ]
     )
     ingest_daily_start: date = date(2015, 1, 1)
-    daily_bar_final_after_ist: time = time(16, 0)  # today's 1d bar is partial before this
-    daily_ingest_cron: str = "15 16 * * 1-5"  # IST
+    # Kite publishes a session's official daily close overnight: a 1d bar fetched the same
+    # evening is provisional (seen 2026-11-19: 223/224 closes changed by 08:05 next day).
+    # Session D's 1d bar is final from D+1 at this IST time (margin left past the 08:05 seen).
+    daily_bar_final_next_day_ist: time = time(8, 15)
+    daily_ingest_cron: str = "30 8 * * 1-6"  # IST, after next-day finality (Mon picks up Fri)
+    job_history_size: int = Field(default=20, ge=1, le=200)  # runs kept in memory (Admin page)
 
     # --- intraday (Phase 1b, DEC-1B): 1-minute is the single stored source ---
     intraday_floor_date: date = date(2015, 1, 1)  # never request older (Kite's 1m starts ~2015)
@@ -131,7 +135,47 @@ class Settings(BaseSettings):
     intraday_benchmarks: dict[str, str] = Field(
         default_factory=lambda: {"NSE": "NSE:NIFTY 50", "BSE": "BSE:SENSEX"}
     )
-    intraday_ingest_cron: str = "40 16 * * 1-5"  # IST, after the daily ingest
+    intraday_ingest_cron: str = "40 16 * * 1-5"  # IST
+    # 1m bars are final the same evening (re-fetched next morning: identical, 2026-11-19)
+    intraday_final_after_ist: time = time(16, 0)
+    # per-instrument session calendar (revised DEC-1B): own norm, persistent re-baseline,
+    # market-wide short-day floor (see app/data/session_calendar.py)
+    intraday_norm_baseline_sessions: int = Field(default=20, ge=1)
+    intraday_norm_step_sessions: int = Field(default=10, ge=2)
+    intraday_market_short_share: float = Field(default=0.5, gt=0, le=1)
+    intraday_market_min_instruments: int = Field(default=3, ge=1)
+
+    # --- NSE archive + measured adjustments (Phase 1c, DEC-B revised) ---
+    # The static archive serves an honest client; www.nseindia.com 403s non-browsers and we
+    # never impersonate a browser. Only the Bc (corporate actions) and Pd (official prices)
+    # members of each day's PR zip are read; zips are never written to disk.
+    nse_archive_base_url: str = "https://nsearchives.nseindia.com/archives/equities/bhavcopy/pr"
+    nse_user_agent: str = "FinTrack/0.1 (personal research)"
+    nse_archive_start: date = date(2015, 1, 1)
+    nse_symbol_changes_url: str = (
+        "https://nsearchives.nseindia.com/content/equities/symbolchange.csv"
+    )
+    # the daily job loads the new NSE archive day(s) and re-measures adjustments after its
+    # backfill (official cross-check of the bars just stored)
+    nse_archive_after_daily: bool = True
+    nse_archive_rps: float = Field(default=1.0, gt=0, le=5)
+    nse_archive_timeout_seconds: float = Field(default=30.0, gt=0)
+    nse_archive_retries: int = Field(default=3, ge=0)
+    nse_archive_retry_backoff_seconds: float = Field(default=2.0, ge=0)
+    nse_archive_max_zip_mb: float = Field(default=20.0, gt=0)  # largest seen: 0.66 MB
+    nse_archive_max_member_mb: float = Field(default=20.0, gt=0)  # zip-bomb guard
+    # a day's Kite price agrees with NSE * factor within this many paisa (both sides rounded)
+    adj_tolerance_paisa: float = Field(default=2.5, gt=0)  # half a 5-paisa tick
+    # windows with fewer measured days are under-determined: flagged, no as-traded derived
+    adj_min_window_days: int = Field(default=5, ge=2)
+    # 1m/daily grain: 2 of (open, high, low) ratios must agree within this fraction
+    adj_grain_agree: float = Field(default=0.002, gt=0, lt=0.1)
+    # a window-to-window step smaller than this (fraction) is no jump at all
+    adj_flat: float = Field(default=0.0005, gt=0, lt=0.05)
+    # a measured jump matches an NSE action's expected ratio within this fraction
+    adj_match: float = Field(default=0.005, gt=0, lt=0.1)
+    # unexplained jumps up to this fraction are badged; larger ones make both windows suspect
+    adj_unexplained_small: float = Field(default=0.03, gt=0, lt=0.5)
 
     # --- validation gate ---
     validation_large_gap_pct: int = Field(default=20, ge=1)  # open vs prev close
@@ -145,6 +189,11 @@ class Settings(BaseSettings):
     coverage_max_stale_weekdays: int = Field(default=3, ge=0)
     # weekdays without a bar between a symbol's first and last bar (holidays alone ≈ 5%)
     coverage_max_weekday_gap_pct: float = Field(default=10.0, gt=0, le=100)
+    # A symbol's listing starts its last Kite segment after a gap of at least this many NSE
+    # trading days in which NSE ALSO shows no trading for it (ghost pre-listing bars, e.g.
+    # SBICARD's 20 bars in Jan 2015 vs its 2020-03-16 listing). Unverifiable gaps (no archive)
+    # never reset the listing — they stay counted as missing.
+    coverage_listing_gap_sessions: int = Field(default=60, ge=5)
 
     # --- cache ---
     cache_max_entries: int = Field(default=10_000, ge=1)

@@ -31,3 +31,16 @@ const istTime = new Intl.DateTimeFormat("en-IN", {
 export function formatIstTime(iso: string): string {
   return `${istTime.format(new Date(iso))} IST`;
 }
+
+const istDateTime = new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata",
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+export function formatIstDateTime(iso: string): string {
+  return `${istDateTime.format(new Date(iso))} IST`;
+}

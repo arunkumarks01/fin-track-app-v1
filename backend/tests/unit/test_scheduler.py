@@ -127,3 +127,33 @@ async def test_intraday_job_gives_up_after_retry_limit(
     assert state.status == "failed"
     assert state.error is not None
     assert "Connect call failed" in state.error
+
+
+async def test_job_history_is_bounded_newest_first(
+    make_settings: SettingsFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from app.data import jobs
+    from app.data.extract_intraday import IntradayReport
+    from tests.fixtures.clock import FrozenClock
+
+    clock = FrozenClock(datetime(2026, 1, 1, tzinfo=UTC))
+    reports = iter(
+        IntradayReport(started_at=clock.now(), inserted=n, stopped_reason=stop)
+        for n, stop in [(1, None), (2, "disk budget reached"), (3, None)]
+    )
+
+    async def fake_run(*_a: object, **_k: object) -> IntradayReport:
+        return next(reports)
+
+    monkeypatch.setattr(jobs, "run_intraday_backfill", fake_run)
+    s = make_settings(kite_api_key="k" * 10, kite_api_secret="s" * 10, job_history_size=2)
+    runner = jobs.IngestRunner(None, object(), s, clock)  # type: ignore[arg-type]
+    for _ in range(3):
+        await runner.intraday_ingest()
+    assert [(r.status, r.result["intraday"]["inserted"]) for r in runner.history] == [
+        ("ok", 3),
+        ("failed", 2),
+    ]
+    assert runner.history[0] is runner.last

@@ -92,7 +92,19 @@ async def test_newest_first_rounds_then_idempotent(pool: Any, db: Any, test_dsn:
 
     again = await run_intraday_backfill(pool, src, settings_for(test_dsn), FrozenClock(EVENING))
     assert again.inserted == 0
-    assert len(src.calls) == calls  # everything floored + up to date: no requests at all
+    # everything floored + up to date: only the drift re-check of each symbol's newest
+    # stored session (one request per symbol), recorded as checked
+    rechecks = src.calls[calls:]
+    assert len(rechecks) == 3
+    assert {(c[2].date(), c[3].date()) for c in rechecks} == {(END, END)}
+    assert again.already_stored == 3 * MINUTES
+    assert (
+        await db.fetchval(
+            "SELECT count(*) FROM app.adjustment_checks WHERE timeframe = '1m' AND checked_on = $1",
+            END,
+        )
+        == 3
+    )
     dupes = await db.fetchval("SELECT count(*) - count(DISTINCT (sid, ts)) FROM app.ohlcv_1m")
     assert dupes == 0
 
@@ -222,8 +234,10 @@ async def test_forward_catch_up_fetches_only_new_days(pool: Any, db: Any, test_d
     report = await run_intraday_backfill(pool, src, s, FrozenClock(EVENING))
     new_calls = src.calls[before:]
     assert len(new_calls) == 3  # one catch-up window per symbol, nothing else
-    assert all(c[2].date() == date(2026, 11, 11) for c in new_calls)
+    # it starts ON the newest stored session (11-10, the drift re-check), not after it
+    assert all(c[2].date() == date(2026, 11, 10) for c in new_calls)
     assert report.inserted == 3 * 6 * MINUTES
+    assert report.already_stored == 3 * MINUTES
 
 
 async def test_overflowing_volume_is_quarantined_not_fatal(
@@ -264,3 +278,30 @@ async def test_missing_sessions_counts_only_gaps_inside_each_symbols_span(
     assert by["NSE:AAA"].review == 1
     assert by["NSE:BBB"].missing_sessions == 0
     assert by["NSE:NIFTY 50"].missing_sessions == 0
+
+
+async def test_intraday_drift_is_recorded_when_a_whole_session_rescales(
+    pool: Any, db: Any, test_dsn: str
+) -> None:
+    src = FakeHistorical({101: history(101, end=date(2026, 11, 10))})
+    s = settings_for(test_dsn)
+    await run_intraday_backfill(
+        pool, src, s, FrozenClock(datetime(2026, 11, 10, 18, 0, tzinfo=IST)), ["NSE:AAA"]
+    )
+    # Kite re-adjusts AAA's history x0.5 (prices only); the newest stored session comes back
+    from decimal import Decimal
+
+    def half(x: Any) -> Decimal:  # Kite rounds its adjusted prices to the paisa
+        return (Decimal(x) / 2).quantize(Decimal("0.01"))
+
+    halved = [
+        [r[0], *(half(x) for x in r[1:5]), r[5]] for r in history(101, end=date(2026, 11, 10))
+    ]
+    src.series[101] = halved
+    report = await run_intraday_backfill(
+        pool, src, s, FrozenClock(datetime(2026, 11, 11, 18, 0, tzinfo=IST)), ["NSE:AAA"]
+    )
+    assert report.quarantined == 0  # not conflicts: one consistent ratio
+    drift = await db.fetchrow("SELECT timeframe, ref_date, ratio FROM app.adjustment_drift")
+    assert (drift["timeframe"], drift["ref_date"]) == ("1m", date(2026, 11, 10))
+    assert float(drift["ratio"]) == pytest.approx(0.5, abs=1e-3)

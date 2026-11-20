@@ -6,19 +6,28 @@ POST /api/data/ingest/daily    → start universe refresh + daily backfill (bear
 POST /api/data/ingest/intraday → start the newest-first 1-minute backfill (bearer, background)
 GET  /api/data/coverage/intraday → calendar-aware 1-minute completeness
 GET  /api/data/bars            → derived intraday bars (THE shared derivation; read-only)
+POST /api/data/ingest/nse-archive → NSE archive load + adjustment analysis (bearer)
+POST /api/data/adjustments/analyse → re-measure Kite's adjustment (bearer)
+POST /api/data/repair/provisional → audited repair of provisional 1d bars (bearer)
+GET  /api/data/adjustments[?symbol] → measured adjustment summary / one symbol's windows
+GET  /api/data/as-traded       → official as-traded 1d (NSE) or derived 1m bars, with quality
+GET  /api/data/repairs         → audited repairs + acceptance vs NSE official closes
 """
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from app.core.tradingdate import MARKET_TZ
+from app.data.adjustment_report import adjustments_summary, repairs_report, symbol_adjustments
 from app.data.coverage import coverage_report
 from app.data.intraday import DERIVED_MINUTES, derive_bars
 from app.data.intraday_coverage import intraday_report, review_sessions
 from app.data.jobs import IngestRunner
+from app.data.nse_load import reset_archive_day
 
 router = APIRouter(prefix="/api/data")
 
@@ -145,3 +154,125 @@ async def get_bars(
             ],
         }
     )
+
+
+def _busy() -> JSONResponse:
+    return JSONResponse(
+        {"started": False, "detail": "an ingestion job is already running"}, status_code=409
+    )
+
+
+@router.post("/ingest/nse-archive")
+async def start_nse_archive(request: Request, retry_missing: bool = False) -> JSONResponse:
+    runner = _runner(request)
+    if not runner.start(lambda: runner.nse_archive_ingest(retry_missing)):
+        return _busy()
+    return JSONResponse({"started": True}, status_code=202)
+
+
+@router.post("/adjustments/analyse")
+async def start_adjustment_analysis(request: Request, symbols: str | None = None) -> JSONResponse:
+    runner = _runner(request)
+    wanted = [s.strip() for s in symbols.split(",") if s.strip()] if symbols else None
+    if not runner.start(lambda: runner.adjustment_analysis(wanted)):
+        return _busy()
+    return JSONResponse({"started": True}, status_code=202)
+
+
+@router.post("/repair/provisional")
+async def start_provisional_repair(request: Request) -> JSONResponse:
+    blocked = _guard_start(request)
+    if blocked is not None:
+        return blocked
+    runner = _runner(request)
+    if not runner.start(runner.repair_provisional):
+        return _busy()
+    return JSONResponse({"started": True}, status_code=202)
+
+
+@router.get("/adjustments")
+async def get_adjustments(request: Request, symbol: str | None = None) -> JSONResponse:
+    async with request.app.state.pool.acquire() as conn:
+        if symbol:
+            return JSONResponse(await symbol_adjustments(conn, symbol))
+        return JSONResponse(
+            await adjustments_summary(
+                conn, request.app.state.settings, request.app.state.clock.now()
+            )
+        )
+
+
+@router.get("/repairs")
+async def get_repairs(request: Request) -> JSONResponse:
+    async with request.app.state.pool.acquire() as conn:
+        return JSONResponse(await repairs_report(conn))
+
+
+@router.get("/as-traded")
+async def get_as_traded(
+    request: Request, symbol: str, grain: str, start: date, end: date
+) -> JSONResponse:
+    """Official as-traded prices: 1d straight from NSE's bhavcopy (exact); 1m derived as
+    stored ÷ measured factor, NULL (never guessed) where the day isn't usable."""
+    if grain not in ("1d", "1m"):
+        return JSONResponse({"detail": "grain must be 1d or 1m"}, status_code=422)
+    limit = MAX_BARS_SPAN_DAYS if grain == "1m" else 3700
+    if end < start or (end - start).days > limit:
+        return JSONResponse({"detail": f"start..end must span 0..{limit} days"}, status_code=422)
+    async with request.app.state.pool.acquire() as conn:
+        if grain == "1d":
+            rows = await conn.fetch(
+                """SELECT trade_date, open, high, low, close, volume FROM app.nse_bhav
+                   WHERE symbol = $1 AND trade_date BETWEEN $2 AND $3 ORDER BY 1""",
+                symbol,
+                start,
+                end,
+            )
+            bars = [
+                {
+                    "t": r["trade_date"].isoformat(),
+                    "o": r["open"],
+                    "h": r["high"],
+                    "l": r["low"],
+                    "c": r["close"],
+                    "v": r["volume"],
+                    "quality": "official",
+                }
+                for r in rows
+            ]
+        else:
+            lo = datetime.combine(start, time.min, MARKET_TZ)
+            hi = datetime.combine(end + timedelta(days=1), time.min, MARKET_TZ)
+            rows = await conn.fetch(
+                "SELECT * FROM app.minute_as_traded($1, $2, $3)", symbol, lo, hi
+            )
+            bars = [
+                {
+                    "t": r["ts"].isoformat(),
+                    "o": r["open"],
+                    "h": r["high"],
+                    "l": r["low"],
+                    "c": r["close"],
+                    "v": r["volume"],
+                    "quality": r["quality"],
+                }
+                for r in rows
+            ]
+    return JSONResponse({"symbol": symbol, "grain": grain, "prices": "integer paisa", "bars": bars})
+
+
+@router.post("/nse-archive/reset-day")
+async def reset_nse_archive_day(
+    request: Request, day: date, reason: str, purge: bool = False
+) -> JSONResponse:
+    """Queue one archive day for a single re-fetch; `purge=true` deletes its stored official
+    rows first, each logged to app.data_repairs (audited). Bearer-protected."""
+    if not reason.strip():
+        return JSONResponse({"detail": "a reason is required (it is logged)"}, status_code=422)
+    if _runner(request).busy:
+        return _busy()
+    async with request.app.state.pool.acquire() as conn, conn.transaction():
+        deleted = await reset_archive_day(
+            conn, day, purge, reason.strip(), request.app.state.clock.now()
+        )
+    return JSONResponse({"day": day.isoformat(), "purged_rows": deleted, "queued": True})

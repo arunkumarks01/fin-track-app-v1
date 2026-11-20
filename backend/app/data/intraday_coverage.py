@@ -1,13 +1,15 @@
-"""Calendar-aware 1-minute completeness (Phase 1b).
+"""Calendar-aware 1-minute completeness — PER INSTRUMENT (revised DEC-1B, 2026-11-20).
 
-A session's expected minute count is NOT a hardcoded 375: it is the exchange benchmark's
-count that day (app.exchange_sessions), so muhurat / half-day / special sessions are judged
-against their real length. Per session:
-  complete  bars == expected
-  short     bars <  expected   → flagged for review (a real gap, e.g. RELIANCE 360 vs 375)
-  excess    bars >  expected   → flagged for review (benchmark itself may be short)
-  unknown   benchmark has no data that day → not guessed
-Plus `missing_sessions`: benchmark sessions inside a symbol's span with no bars at all.
+Each session is judged against the instrument's OWN norm (app.intraday_session_status, kept
+by app/data/session_calendar.py): never a hardcoded 375 and never a cross-sectional
+benchmark or percentile. Per session:
+  complete      bars == the instrument's norm that session
+  short         bars <  norm → flagged for review
+  excess        bars >  norm → flagged for review
+  market_short  short on a market-wide short day (outage / muhurat / half-day) — reported,
+                not flagged
+  unknown       no norm yet (too few sessions) → not guessed
+Plus `missing_sessions`: exchange sessions inside a symbol's span with no bars at all.
 Nothing here quarantines data — it reports, and later stages decide what is usable.
 """
 
@@ -19,34 +21,33 @@ from typing import Any
 
 _SQL = """
 WITH s AS (
-    SELECT i.symbol, x.session_date, x.bars, e.expected_minutes AS expected
+    SELECT i.symbol, x.session_date, x.bars, st.expected,
+           COALESCE(st.status, 'unknown') AS status
     FROM app.intraday_sessions x
     JOIN app.instrument_ids i USING (sid)
-    LEFT JOIN app.exchange_sessions e
-           ON e.exchange = split_part(i.symbol, ':', 1) AND e.session_date = x.session_date
+    LEFT JOIN app.intraday_session_status st
+           ON st.sid = x.sid AND st.session_date = x.session_date
 ),
 per AS (
     SELECT symbol, min(session_date) AS first_d, max(session_date) AS last_d,
            count(*) AS sessions,
            sum(bars) AS bars,
-           count(*) FILTER (WHERE bars = expected) AS complete,
-           count(*) FILTER (WHERE bars < expected) AS short,
-           COALESCE(sum(expected - bars) FILTER (WHERE bars < expected), 0) AS missing_minutes,
-           count(*) FILTER (WHERE bars > expected) AS excess,
-           count(*) FILTER (WHERE expected IS NULL) AS unknown,
-           count(*) FILTER (WHERE expected IS NOT NULL) AS known
+           count(*) FILTER (WHERE status = 'complete') AS complete,
+           count(*) FILTER (WHERE status = 'short') AS short,
+           COALESCE(sum(expected - bars) FILTER (WHERE status = 'short'), 0) AS missing_minutes,
+           count(*) FILTER (WHERE status = 'excess') AS excess,
+           count(*) FILTER (WHERE status = 'market_short') AS market_short,
+           count(*) FILTER (WHERE status = 'unknown') AS unknown
     FROM s GROUP BY symbol
 )
--- missing = benchmark sessions in the symbol's span - the symbol's sessions matched to one.
--- (sid, session_date) is unique, so this is exact — and linear, unlike an anti-join per
--- exchange session against the unindexed CTE (that was quadratic: >5 min on real data).
+-- missing = exchange sessions in the symbol's span - the symbol's sessions in that span.
+-- (sid, session_date) is unique, so this is exact and linear.
 SELECT p.symbol, p.first_d, p.last_d, p.sessions, p.bars, p.complete, p.short,
-       p.missing_minutes, p.excess, p.unknown,
+       p.missing_minutes, p.excess, p.market_short, p.unknown,
        (SELECT count(*) FROM app.exchange_sessions e
          WHERE e.exchange = split_part(p.symbol, ':', 1)
            AND e.session_date BETWEEN p.first_d AND p.last_d
-           AND e.expected_minutes IS NOT NULL
-       ) - p.known AS missing_sessions
+       ) - p.sessions AS missing_sessions
 FROM per p
 ORDER BY p.symbol
 """
@@ -65,10 +66,11 @@ class SymbolCompleteness:
     excess: int
     unknown: int
     missing_sessions: int
+    market_short: int = 0
 
     @property
     def complete_pct(self) -> float:
-        judged = self.sessions - self.unknown
+        judged = self.sessions - self.unknown - self.market_short
         return round(100 * self.complete / judged, 2) if judged else 0.0
 
     @property
@@ -90,6 +92,7 @@ async def completeness(conn: Any) -> list[SymbolCompleteness]:
             r["excess"],
             r["unknown"],
             r["missing_sessions"],
+            r["market_short"],
         )
         for r in await conn.fetch(_SQL)
     ]
@@ -99,32 +102,29 @@ async def review_sessions(conn: Any, symbol: str, limit: int = 50) -> list[dict[
     """The sessions to look at for one symbol (short / excess / unknown), worst first."""
     rows = await conn.fetch(
         """
-        SELECT x.session_date, x.bars, e.expected_minutes AS expected, x.first_ts, x.last_ts
+        SELECT x.session_date, x.bars, st.expected, COALESCE(st.status, 'unknown') AS status,
+               x.first_ts, x.last_ts
         FROM app.intraday_sessions x JOIN app.instrument_ids i USING (sid)
-        LEFT JOIN app.exchange_sessions e
-               ON e.exchange = split_part(i.symbol, ':', 1) AND e.session_date = x.session_date
-        WHERE i.symbol = $1 AND (e.expected_minutes IS NULL OR x.bars <> e.expected_minutes)
-        ORDER BY abs(COALESCE(e.expected_minutes, x.bars) - x.bars) DESC, x.session_date DESC
+        LEFT JOIN app.intraday_session_status st
+               ON st.sid = x.sid AND st.session_date = x.session_date
+        WHERE i.symbol = $1 AND COALESCE(st.status, 'unknown') IN ('short', 'excess', 'unknown')
+        ORDER BY abs(COALESCE(st.expected, x.bars) - x.bars) DESC, x.session_date DESC
         LIMIT $2
         """,
         symbol,
         limit,
     )
-    out = []
-    for r in rows:
-        exp = r["expected"]
-        status = "unknown" if exp is None else ("short" if r["bars"] < exp else "excess")
-        out.append(
-            {
-                "date": r["session_date"].isoformat(),
-                "bars": r["bars"],
-                "expected": exp,
-                "status": status,
-                "first": r["first_ts"].isoformat(),
-                "last": r["last_ts"].isoformat(),
-            }
-        )
-    return out
+    return [
+        {
+            "date": r["session_date"].isoformat(),
+            "bars": r["bars"],
+            "expected": r["expected"],
+            "status": r["status"],
+            "first": r["first_ts"].isoformat(),
+            "last": r["last_ts"].isoformat(),
+        }
+        for r in rows
+    ]
 
 
 async def intraday_report(conn: Any, now: datetime) -> dict[str, Any]:
@@ -142,6 +142,7 @@ async def intraday_report(conn: Any, now: datetime) -> dict[str, Any]:
             "short_sessions": sum(r.short for r in rows),
             "missing_minutes": sum(r.missing_minutes for r in rows),
             "excess_sessions": sum(r.excess for r in rows),
+            "market_short_sessions": sum(r.market_short for r in rows),
             "unknown_sessions": sum(r.unknown for r in rows),
             "missing_sessions": sum(r.missing_sessions for r in rows),
             "oldest": min((r.first for r in rows), default=None)

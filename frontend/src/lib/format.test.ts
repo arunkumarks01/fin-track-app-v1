@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDuration, formatInt, formatIstTime, formatPct } from "./format";
+import { formatDuration, formatInt, formatIstDateTime, formatIstTime, formatPct } from "./format";
 
 describe("format", () => {
   it("groups integers the Indian way", () => {
@@ -16,5 +16,6 @@ describe("format", () => {
 
   it("shows times in IST", () => {
     expect(formatIstTime("2026-11-19T12:48:47+00:00")).toBe("18:18:47 IST");
+    expect(formatIstDateTime("2026-11-20T10:45:00+00:00")).toBe("20 Nov, 16:15 IST");
   });
 });

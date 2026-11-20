@@ -33,7 +33,8 @@ AUTH = {"Authorization": f"Bearer {TEST_TOKEN}"}
 START = date(2015, 1, 1)
 N_BARS = 400  # 400 weekdays from 2015-01-01 -> 2016-07-14
 LAST = make_daily_candles(Pattern.TREND, n=N_BARS, start=START)[-1].ts.date()
-NOW = datetime.combine(LAST, datetime.min.time(), IST).replace(hour=18)
+# the morning after LAST: LAST's 1d bar is final (next-day finality)
+NOW = datetime.combine(LAST + timedelta(days=1), datetime.min.time(), IST).replace(hour=9)
 
 
 def gate_settings(test_dsn: str, **kw: Any) -> Settings:
@@ -236,3 +237,126 @@ async def test_quarantine_counted_only_while_unresolved(db: Any, test_dsn: str) 
     )
     s = (await coverage_report(db, gate_settings(test_dsn), NOW)).symbols[0]
     assert (s.quarantined, s.quarantined_total) == (1, 2)
+
+
+# --- listing-aware gap check (ghost pre-listing segments) --------------------------------
+
+
+async def _ledger_and_bhav(db: Any, symbol: str, days: list[date], traded: set[date]) -> None:
+    """NSE archive ledger 'ok' for every day; an official row for `symbol` only on `traded`."""
+    await db.executemany(
+        """INSERT INTO app.nse_archive_files (trade_date, status, fetched_at)
+           VALUES ($1, 'ok', $2) ON CONFLICT DO NOTHING""",
+        [(d, NOW) for d in days],
+    )
+    await db.executemany(
+        """INSERT INTO app.nse_bhav
+           (symbol, trade_date, prev_close, open, high, low, close, volume)
+           VALUES ($1, $2, 100, 100, 100, 100, 100, 1)""",
+        [(symbol, d) for d in sorted(traded)],
+    )
+
+
+def _weekdays(start: date, n: int) -> list[date]:
+    out: list[date] = []
+    d = start
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+async def test_ghost_pre_listing_segment_is_not_counted_as_missing(db: Any, test_dsn: str) -> None:
+    # SBICARD pattern: 20 ghost bars, years of nothing (NSE: no trading), then the real listing
+    ghost = "NSE:S00"
+    bars = {ghost: (date(2016, 1, 1), 300), "NSE:NIFTY 50": (START, N_BARS)}
+    await _seed(db, IDX + EQ[:1], bars)
+    early = make_daily_candles(Pattern.TREND, n=20, start=START, symbol=ghost)
+    await db.executemany(
+        """INSERT INTO app.ohlcv_candles (symbol, timeframe, ts, open, high, low, close, volume)
+           VALUES ($1, '1d', $2, $3, $4, $5, $6, $7)""",
+        [(ghost, c.ts, c.open, c.high, c.low, c.close, c.volume) for c in early],
+    )
+    days = _weekdays(START, 400)
+    real = {c.ts.date() for c in make_daily_candles(Pattern.TREND, n=300, start=date(2016, 1, 1))}
+    await _ledger_and_bhav(db, ghost, days, real)
+    report = await coverage_report(db, gate_settings(test_dsn), NOW)
+    s = next(x for x in report.symbols if x.symbol == ghost)
+    assert s.listing == date(2016, 1, 1)
+    assert s.pre_listing_bars == 20
+    assert s.clean_bars == 300  # counted from listing only
+    assert s.weekday_gap_pct == 0.0
+    assert s.sufficient
+
+
+async def test_hole_while_nse_traded_stays_a_hole(db: Any, test_dsn: str) -> None:
+    # FORCEMOT pattern: Kite is missing ~80 sessions but NSE traded the symbol then
+    sym = "NSE:S00"
+    await _seed(db, IDX + EQ[:1], {"NSE:NIFTY 50": (START, N_BARS)})
+    days = _weekdays(START, 400)
+    kept = days[:150] + days[230:]
+    candles = make_daily_candles(Pattern.TREND, n=400, start=START, symbol=sym)
+    await db.executemany(
+        """INSERT INTO app.ohlcv_candles (symbol, timeframe, ts, open, high, low, close, volume)
+           VALUES ($1, '1d', $2, $3, $4, $5, $6, $7)""",
+        [
+            (sym, c.ts, c.open, c.high, c.low, c.close, c.volume)
+            for c in candles
+            if c.ts.date() in set(kept)
+        ],
+    )
+    await _ledger_and_bhav(db, sym, days, set(days))  # NSE traded every day
+    report = await coverage_report(db, gate_settings(test_dsn), NOW)
+    s = next(x for x in report.symbols if x.symbol == sym)
+    assert s.listing == START  # not reset: the gap is a real hole
+    assert s.pre_listing_bars == 0
+    assert s.weekday_gap_pct is not None
+    assert s.weekday_gap_pct > 10
+    assert not s.sufficient
+
+
+async def test_unverifiable_gap_is_not_treated_as_listing(db: Any, test_dsn: str) -> None:
+    # no NSE archive for the gap → can't prove pre-listing → the gap counts as missing
+    ghost = "NSE:S00"
+    await _seed(db, IDX + EQ[:1], {ghost: (date(2016, 1, 1), 300), "NSE:NIFTY 50": (START, N_BARS)})
+    early = make_daily_candles(Pattern.TREND, n=20, start=START, symbol=ghost)
+    await db.executemany(
+        """INSERT INTO app.ohlcv_candles (symbol, timeframe, ts, open, high, low, close, volume)
+           VALUES ($1, '1d', $2, $3, $4, $5, $6, $7)""",
+        [(ghost, c.ts, c.open, c.high, c.low, c.close, c.volume) for c in early],
+    )
+    report = await coverage_report(db, gate_settings(test_dsn), NOW)
+    s = next(x for x in report.symbols if x.symbol == ghost)
+    assert s.listing == START
+    assert s.pre_listing_bars == 0
+    assert not s.sufficient
+
+
+async def test_suspension_is_neither_missing_nor_pre_listing(db: Any, test_dsn: str) -> None:
+    # FORCEMOT pattern: traded (NSE + Kite), then ~80 sessions with NO trading anywhere
+    # (suspension), then trading again. The early bars are real history, not "pre-listing",
+    # and the suspended weekdays are not missing data.
+    sym = "NSE:S00"
+    await _seed(db, IDX + EQ[:1], {"NSE:NIFTY 50": (START, N_BARS)})
+    days = _weekdays(START, 400)
+    traded = set(days[:150] + days[230:])
+    candles = make_daily_candles(Pattern.TREND, n=400, start=START, symbol=sym)
+    await db.executemany(
+        """INSERT INTO app.ohlcv_candles (symbol, timeframe, ts, open, high, low, close, volume)
+           VALUES ($1, '1d', $2, $3, $4, $5, $6, $7)""",
+        [
+            (sym, c.ts, c.open, c.high, c.low, c.close, c.volume)
+            for c in candles
+            if c.ts.date() in traded
+        ],
+    )
+    await _ledger_and_bhav(db, sym, days, traded)  # NSE: no rows during the suspension
+    report = await coverage_report(db, gate_settings(test_dsn), NOW)
+    s = next(x for x in report.symbols if x.symbol == sym)
+    assert s.listing == START  # NOT reset to the post-suspension date
+    assert s.pre_listing_bars == 0
+    assert s.clean_bars == 320
+    assert s.weekday_gap_pct == 0.0  # suspended weekdays are not missing
+    assert s.suspended_weekdays == 80
+    assert s.sufficient
