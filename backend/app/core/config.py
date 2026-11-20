@@ -117,6 +117,7 @@ class Settings(BaseSettings):
     daily_bar_final_next_day_ist: time = time(8, 15)
     daily_ingest_cron: str = "30 8 * * 1-6"  # IST, after next-day finality (Mon picks up Fri)
     job_history_size: int = Field(default=20, ge=1, le=200)  # runs kept in memory (Admin page)
+    chart_max_bars: int = Field(default=5000, ge=100, le=50_000)  # per /api/data/candles page
 
     # --- intraday (Phase 1b, DEC-1B): 1-minute is the single stored source ---
     intraday_floor_date: date = date(2015, 1, 1)  # never request older (Kite's 1m starts ~2015)

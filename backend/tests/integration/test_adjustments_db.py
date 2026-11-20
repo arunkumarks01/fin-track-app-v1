@@ -469,6 +469,10 @@ async def test_purge_logs_every_row_and_a_mislabeled_refetch_becomes_a_gap(
     )
     assert json.loads(log["old_values"])["close"] == RAW[bad]
     assert json.loads(log["new_values"]) == {"deleted": True}
+    from app.data.adjustment_report import repairs_report
+
+    rep = await repairs_report(db)  # archive purges are not bar repairs
+    assert (rep["repairs"], rep["archive_rows_purged"]) == (0, 1)
 
     # the single re-fetch: the archive still serves another day's files for `bad`
     def mislabeled(req: httpx.Request) -> httpx.Response:

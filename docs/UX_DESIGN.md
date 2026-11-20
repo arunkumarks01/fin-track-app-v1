@@ -21,7 +21,7 @@ scroll; PWA-installable.
 - **Primitives:** StatTile, ScoreBar, Badge, focusable Tooltip, Modal/Sheet, EmptyState, ErrorState, Skeleton. Standard loading/empty/error everywhere.
 - **Tokens:** dark-first palette + a real light theme (D14); semantic colors always paired with an icon/arrow (colorblind + a11y), never color alone.
 - **Beginner ⇄ Pro** (D20): Beginner = plain-English-first, more tooltips, fewer raw numbers; Pro = density, keyboard shortcuts. Same components, a mode flag, persisted per device.
-- **Charts (D21):** lightweight-charts (candles + indicators), Recharts (equity/heatmaps/payoff).
+- **Charts (D21 → DEC-CHART):** openalgo-charts (candles; in-browser studies are visual-only), Recharts (equity/heatmaps/payoff).
 
 ## Screens
 

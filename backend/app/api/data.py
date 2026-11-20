@@ -12,6 +12,8 @@ POST /api/data/repair/provisional → audited repair of provisional 1d bars (bea
 GET  /api/data/adjustments[?symbol] → measured adjustment summary / one symbol's windows
 GET  /api/data/as-traded       → official as-traded 1d (NSE) or derived 1m bars, with quality
 GET  /api/data/repairs         → audited repairs + acceptance vs NSE official closes
+GET  /api/data/symbols         → the universe (chart symbol search)
+GET  /api/data/candles         → paged chart candles per interval, adjusted or as-traded
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.tradingdate import MARKET_TZ
 from app.data.adjustment_report import adjustments_summary, repairs_report, symbol_adjustments
+from app.data.candles import CandleRequestError, UnknownSymbol, candles, symbols
 from app.data.coverage import coverage_report
 from app.data.intraday import DERIVED_MINUTES, derive_bars
 from app.data.intraday_coverage import intraday_report, review_sessions
@@ -276,3 +279,40 @@ async def reset_nse_archive_day(
             conn, day, purge, reason.strip(), request.app.state.clock.now()
         )
     return JSONResponse({"day": day.isoformat(), "purged_rows": deleted, "queued": True})
+
+
+@router.get("/symbols")
+async def get_symbols(request: Request) -> JSONResponse:
+    async with request.app.state.pool.acquire() as conn:
+        return JSONResponse({"symbols": await symbols(conn)})
+
+
+@router.get("/candles")
+async def get_candles(
+    request: Request,
+    symbol: str,
+    interval: str,
+    adjustment: str = "adjusted",
+    before: int | None = None,
+    count: int = 1000,
+) -> JSONResponse:
+    """Paged backwards from `before` (UTC seconds, exclusive). Read-only."""
+    from datetime import UTC
+
+    anchor = datetime.fromtimestamp(before, UTC) if before is not None else None
+    try:
+        async with request.app.state.pool.acquire() as conn:
+            body = await candles(
+                conn,
+                symbol,
+                interval,
+                adjustment,
+                anchor,
+                count,
+                request.app.state.settings.chart_max_bars,
+            )
+    except CandleRequestError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=422)
+    except UnknownSymbol:
+        return JSONResponse({"detail": f"{symbol} is not in the universe"}, status_code=404)
+    return JSONResponse(body)

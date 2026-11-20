@@ -148,7 +148,7 @@ def _f(x: Any) -> float | None:
 
 
 async def repairs_report(conn: Any) -> dict[str, Any]:
-    """Every audited repair, with the acceptance check: the repaired close must equal NSE's
+    """Every audited 1d bar repair, with the acceptance check: the repaired close must equal NSE's
     official close for that day (or the difference is an explained Kite adjustment)."""
     rows = await conn.fetch(
         """SELECT r.symbol, (r.ts AT TIME ZONE 'Asia/Kolkata')::date AS d,
@@ -158,7 +158,11 @@ async def repairs_report(conn: Any) -> dict[str, Any]:
            FROM app.data_repairs r
            LEFT JOIN app.nse_bhav b
                   ON b.symbol = r.symbol AND b.trade_date = (r.ts AT TIME ZONE 'Asia/Kolkata')::date
+           WHERE r.timeframe = '1d'
            ORDER BY r.symbol, r.ts"""
+    )
+    purged = await conn.fetchval(
+        "SELECT count(*) FROM app.data_repairs WHERE timeframe = 'nse_bhav'"
     )
     items = [
         {
@@ -177,6 +181,7 @@ async def repairs_report(conn: Any) -> dict[str, Any]:
         "checked_against_official": len(checked),
         "match_official": sum(1 for i in checked if i["matches_official"]),
         "not_checkable_yet": len(items) - len(checked),
+        "archive_rows_purged": purged,  # audited deletions of wrong NSE rows (not bar repairs)
         "mismatches": [i for i in checked if not i["matches_official"]],
         "items": items,
     }

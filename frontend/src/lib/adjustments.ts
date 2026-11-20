@@ -95,6 +95,7 @@ export type RepairsReport = {
   checked: number;
   matchOfficial: number;
   notCheckable: number;
+  archiveRowsPurged: number;
   mismatches: { symbol: string; date: string; newClose: number; officialClose: number }[];
 };
 
@@ -106,6 +107,7 @@ export function parseRepairs(body: unknown): RepairsReport {
     checked: num(b.checked_against_official, "checked_against_official"),
     matchOfficial: num(b.match_official, "match_official"),
     notCheckable: num(b.not_checkable_yet, "not_checkable_yet"),
+    archiveRowsPurged: num(b.archive_rows_purged, "archive_rows_purged"),
     mismatches: b.mismatches.map((x) => {
       const m = rec(x, "mismatch");
       return {

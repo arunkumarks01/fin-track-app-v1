@@ -60,7 +60,7 @@ validated; multi-leg fills + margin modeled in the sandbox.
 
 **Phase 8 — Frontend + learning layer + agents (~3–4 wk).** Design system (one formatter,
 primitives, Beginner/Pro, dark/light), honest-UI, full nav (Dashboard, Journal, Backtest,
-Analytics, **Options** flow, Learn, Settings, Admin), charts (lightweight-charts + Recharts +
+Analytics, **Options** flow, Learn, Settings, Admin), charts (openalgo-charts per DEC-CHART + Recharts +
 payoff), responsive + mobile tabs + PWA. Learning: "Why this trade?" w/ history, risk slider,
 payoff diagrams, pre-open tutorial, prediction-vs-outcome journal, glossary, curriculum.
 Explainer + Q&A + commentary agents. *Gate:* `tsc` clean; a beginner understands any

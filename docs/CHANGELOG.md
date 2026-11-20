@@ -1,5 +1,53 @@
 # Changelog
 
+## [Unreleased] — Charts page: OpenAlgo Charts over FinTrack candles (2026-11-20)
+
+**DEC-CHART** revises D21: openalgo-charts 2.6.9 (exact pin, Apache-2.0) replaces lightweight-charts for
+candle charts. Built before 1d at the user's request; read-only, nothing scores from it.
+
+### Added
+- `app/data/candles.py` + `GET /api/data/symbols` and `GET /api/data/candles?symbol&interval&adjustment&before&count`
+  (integer paisa, epoch-second times, `has_more`/`next_before` paging, `omitted_unusable`, a `source` string).
+  Intervals 1m 3m 5m 15m 30m 1h D W — 3m–1h from `derive_bars()` (session-anchored), W built from D (Monday 00:00 IST).
+  Adjusted = stored Kite × recorded drift; Raw = NSE bhavcopy (D/W) or `app.minute_as_traded()` (1m). Raw on a derived
+  interval → 422; unknown symbol → 404; `pre_listing` bars excluded. Config `CHART_MAX_BARS` (default 5000).
+- The page cursor is the earliest minute **scanned**, so a page whose minutes were all omitted still pages on
+  (caught on live RELIANCE data: Friday's 1m had no as-traded measurement yet).
+- Frontend `/charts` (nav link): the widget with 112 studies loaded client-side only; `FinTrackFeed` (`src/lib/charts.ts`)
+  with strict parsers (rejects non-paisa units, fractional prices, bad OHLC order, non-ascending times); `paisaToRupees`
+  at the display edge. A host Adjusted/Raw switch (the widget has none) enabled only where the feed declares raw; a
+  banner labels studies as visual-only; a provenance line shows each page's source and omitted-bar count. No order entry.
+- Tests: 15 DB tests (`test_candles_api.py`), 12 vitest (`charts.test.ts`).
+
+### Verified in the browser
+NIFTY 50 D; RELIANCE D adjusted → Raw ("NSE official bhavcopy"); 15m with RSI (Raw disabled, falls back to Adjusted);
+1m Raw ending 15:14 (closing auction) with 360 omitted minutes reported. Layout persists across reloads. The first-visit
+default (NIFTY 50, D) could not be exercised in the pane (the widget restored its saved layout every time).
+
+### Noted
+- `npm audit`: PostCSS advisories inside Next 15's bundled copy (pre-existing; the fix is Next 16, outside the locked stack).
+
+## [Unreleased] — 1d decisions recorded as provisional (2026-11-20)
+
+The user's five 1d calls were agreed on 2026-11-20, adjusted against measured data, and recorded in DECISIONS as **DEC-1D-DEPS / -TICKS / -CHAIN / -GREEKS / -OWNERS** (provisional). No code, schema or dependency was added; 1d is built only after they are locked.
+
+- **Dependencies:** `websockets` + `pyarrow`. `kiteconnect`/KiteTicker isn't a locked dependency (DEC-K2 chose `httpx`) and would bring 25 packages; this was tested in a throwaway Python 3.12 environment.
+- **Ticks:**
+  - Full mode, compact schema with depth as fixed columns, hot window ~5 sessions, Parquet as the permanent record
+  - fail-closed export (verify before any drop); the unconditional 90-day drop is replaced first
+  - **sizing is pending Monday's full-session probe**
+- **Option chain:** NIFTY, BANKNIFTY, FINNIFTY and MIDCPNIFTY plus the top 20 stocks, current and next expiry, ATM ±15: about 2,800 contracts and ~13 s per 5-minute snapshot.
+- **Greeks:** raw snapshots with the spot and near-month future price; IV/greeks computed in Phase 2.
+- **Owners:** new slice **1f — F&O history (archive)**; pre-open feed in Phase 8, with raw pre-open snapshots recorded from 1d.
+
+### Measurements behind them (read-only probes; scratch only, nothing committed)
+- **Ticks** (2026-11-20, 13:27–15:40, 224 instruments, Full mode):
+  - 1,548,744 packets; median 13,100/min in continuous trading
+  - 184-byte stock packets and 32-byte index packets; ~2.3 MB/min on the wire
+  - rate roughly halves from 15:15 (closing auction)
+- **Option chain:** 45,047 NFO contracts; a full snapshot needs 181 quote requests of 250 (500 per request fails above ~8 KB of URL), 190 s, ~44 MB; 63% have open interest.
+- **Synthetic sizing** (to check the pipeline, not the budget): compact Postgres row with 5-level depth arrays ≈ 320–350 B/tick; zstd Parquet ≈ 33 B/tick. Real values come from the full-session probe.
+
 ## [Unreleased] — Phase-1 data-coverage gate opened (2026-11-20)
 
 - **The user opened the gate** on the recomputed coverage report (recorded as **DEC-GATE1** in DECISIONS):

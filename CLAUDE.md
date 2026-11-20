@@ -13,9 +13,10 @@ Record every change in `docs/CHANGELOG.md`.
 **Current phase: 1 (data foundation), approved as a whole (DEC-P1), built in slices 1a→1e.**
 Slices 1a (Kite auth, universe, daily extractor, validation, coverage gate), 1b (1-minute store +
 on-read derivation) and 1c (NSE archive, measured adjustments, drift re-check) are built.
-**The Phase-1 data-coverage gate was opened by the user on 2026-11-20 (DEC-GATE1).** Next: lock the five
-1d decisions (deps, tick schema/budget, chain scope, raw-vs-derived greeks, unassigned items) against the
-measured probe numbers, then build 1d. Before building 1e (reference data), propose its sources and wait
+**The Phase-1 data-coverage gate was opened by the user on 2026-11-20 (DEC-GATE1).** The five 1d decisions are
+recorded as **provisional** (DEC-1D-*): `websockets` + `pyarrow`; Full-mode ticks, compact schema, short hot window,
+fail-closed Parquet export; a narrow option chain; raw snapshots only (greeks in Phase 2); new slice 1f (F&O
+history from the archive). Tick sizing waits on a full-session probe; build 1d only after the user locks them. Before building 1e (reference data), propose its sources and wait
 for approval. Open, non-blocking: the 2015 data policy and the 'corroborated' rule (DEC-GATE1).
 
 ## Non-negotiable laws (ARCHITECTURE §2)
@@ -167,6 +168,10 @@ injected `Clock` (`app/core/clock.py`). Never a source of truth.
   instrument's own norm, re-baselined on a persistent step-change (the 2026 closing auction 375→360),
   with a market-wide short-day floor; never a benchmark/percentile. Shortfalls are flagged, never quarantined.
 - 1d candles stay Kite-native (the official close is not the last 1m close).
+
+**Charts (DEC-CHART)** — `app/data/candles.py`, `/api/data/candles`, frontend `/charts`: openalgo-charts over
+FinTrack's own candles. The backend serves every interval (never re-bucket in the browser); Raw = as traded, for 1m/D/W
+equities only. The widget's studies are visual-only, never the engine; no `onOrder`.
 
 **Frontend**: the browser calls same-origin `/api/*`, which Next rewrites to `BACKEND_URL`
 (`next.config.ts`). Responses are parsed strictly (`src/lib/health.ts`) — an unexpected shape is

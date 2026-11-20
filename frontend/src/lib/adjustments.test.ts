@@ -55,6 +55,7 @@ describe("parseRepairs", () => {
     checked_against_official: 223,
     match_official: 222,
     not_checkable_yet: 0,
+    archive_rows_purged: 162,
     mismatches: [
       {
         symbol: "NSE:AAA",
@@ -74,6 +75,7 @@ describe("parseRepairs", () => {
       checked: 223,
       matchOfficial: 222,
       notCheckable: 0,
+      archiveRowsPurged: 162,
       mismatches: [{ symbol: "NSE:AAA", date: "2026-11-19", newClose: 2, officialClose: 3 }],
     });
   });

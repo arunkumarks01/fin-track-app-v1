@@ -44,3 +44,9 @@ const istDateTime = new Intl.DateTimeFormat("en-IN", {
 export function formatIstDateTime(iso: string): string {
   return `${istDateTime.format(new Date(iso))} IST`;
 }
+
+/** Integer paisa → rupees. The display edge only: money stays integer paisa everywhere else. */
+export function paisaToRupees(paisa: number): number {
+  if (!Number.isInteger(paisa)) throw new Error(`paisa must be an integer, got ${paisa}`);
+  return paisa / 100;
+}

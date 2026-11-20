@@ -79,7 +79,7 @@ export function AdjustmentsPanel() {
         <dt className="text-neutral-400">Drift checks out of date</dt>
         <dd className={s.checksStale > 0 ? "text-amber-400" : "text-emerald-400"}>
           {s.checksStale > 0
-            ? `${formatInt(s.checksStale)} symbol-grains — adjusted view may be stale`
+            ? `${formatInt(s.checksStale)} symbol-grains — adjusted view may be stale until the next catch-up re-checks them`
             : `✓ all checked through ${s.lastFinalSession}`}
         </dd>
       </dl>
@@ -159,7 +159,7 @@ function RepairsView({
     return <p className="text-red-400">✕ Couldn&apos;t read the repair log.</p>;
   }
   const r = q.data;
-  if (r.repairs === 0) return null;
+  if (r.repairs === 0 && r.archiveRowsPurged === 0) return null;
   const done = r.notCheckable === 0 && r.matchOfficial === r.checked;
   return (
     <div>
@@ -169,6 +169,11 @@ function RepairsView({
         {formatInt(r.checked)} match NSE&apos;s official close
         {r.notCheckable > 0 && ` · ${formatInt(r.notCheckable)} not checkable yet`}
       </p>
+      {r.archiveRowsPurged > 0 && (
+        <p className="text-neutral-400">
+          {formatInt(r.archiveRowsPurged)} wrong NSE archive rows removed (each one logged)
+        </p>
+      )}
       {r.mismatches.length > 0 && (
         <ul className="mt-1 text-red-400">
           {r.mismatches.slice(0, 10).map((m) => (
