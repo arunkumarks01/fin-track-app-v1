@@ -41,3 +41,89 @@ def test_fixed_defaults_cannot_be_overridden(
     scheduler = build_scheduler(make_settings())
     with pytest.raises(ValueError, match="fixed"):
         register_job(scheduler, _noop, IntervalTrigger(minutes=5), job_id="x", **override)
+
+
+# --- intraday job auto-resume after a lost database (runner unit, no DB) ---
+async def test_intraday_job_resumes_after_db_loss_but_not_after_budget(
+    make_settings: SettingsFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from app.data import jobs
+    from app.data.extract_intraday import IntradayReport
+    from tests.fixtures.clock import FrozenClock
+
+    outcomes: list[object] = [
+        ConnectionResetError("reset by peer"),
+        OSError("Connect call failed"),
+        IntradayReport(started_at=datetime(2026, 1, 1, tzinfo=UTC), inserted=42),
+    ]
+
+    async def fake_run(*_a: object, **_k: object) -> IntradayReport:
+        nxt = outcomes.pop(0)
+        if isinstance(nxt, Exception):
+            raise nxt
+        assert isinstance(nxt, IntradayReport)
+        return nxt
+
+    waits: list[float] = []
+
+    async def sleep(s: float) -> None:
+        waits.append(s)
+
+    monkeypatch.setattr(jobs, "run_intraday_backfill", fake_run)
+    s = make_settings(
+        kite_api_key="k" * 10, kite_api_secret="s" * 10, intraday_db_retry_wait_seconds=7
+    )
+    runner = jobs.IngestRunner(
+        None,
+        object(),  # type: ignore[arg-type]  # client is never called: the run is faked
+        s,
+        FrozenClock(datetime(2026, 1, 1, tzinfo=UTC)),
+        sleep,
+    )
+    state = await runner.intraday_ingest()
+    assert state.status == "ok"
+    assert state.result["resumes"] == 2
+    assert state.result["intraday"]["inserted"] == 42
+    assert waits == [7, 7]
+
+    # a budget stop is a deliberate fail-closed stop: reported, never auto-retried
+    budget = IntradayReport(
+        started_at=datetime(2026, 1, 1, tzinfo=UTC), stopped_reason="disk budget reached"
+    )
+    outcomes[:] = [budget]
+    waits.clear()
+    state = await runner.intraday_ingest()
+    assert state.status == "failed"
+    assert state.error == "disk budget reached"
+    assert waits == []
+
+
+async def test_intraday_job_gives_up_after_retry_limit(
+    make_settings: SettingsFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from app.data import jobs
+    from tests.fixtures.clock import FrozenClock
+
+    async def always_lost(*_a: object, **_k: object) -> None:
+        raise OSError("Connect call failed")
+
+    async def sleep(_s: float) -> None:
+        return None
+
+    monkeypatch.setattr(jobs, "run_intraday_backfill", always_lost)
+    s = make_settings(kite_api_key="k" * 10, kite_api_secret="s" * 10, intraday_db_retries=2)
+    runner = jobs.IngestRunner(
+        None,
+        object(),  # type: ignore[arg-type]  # client is never called: the run is faked
+        s,
+        FrozenClock(datetime(2026, 1, 1, tzinfo=UTC)),
+        sleep,
+    )
+    state = await runner.intraday_ingest()
+    assert state.status == "failed"
+    assert state.error is not None
+    assert "Connect call failed" in state.error

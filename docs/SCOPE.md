@@ -104,7 +104,7 @@ heatmaps, payoff. Design system (tokens, primitives, one formatter), honest-UI, 
 
 ## 11. Infrastructure & ops (prod-ready)
 **Capabilities:** single-process backend (scheduler `max_instances=1`); **TimescaleDB**
-(hypertables; Apache build → scheduled rollups + `drop_chunks` retention job instead of continuous aggregates/compression/retention policies, see D25) + **Parquet** cold store;
+(hypertables; Apache build → on-read session-anchored `time_bucket` derivation (DEC-1B) + `drop_chunks` retention job instead of continuous aggregates/compression/retention policies, see D25) + **Parquet** cold store;
 in-memory hot cache (no Redis); **backups/PITR + read replica** for the ledger;
 **observability** (metrics, error tracking, dead-man's-switch, health dashboard); auth
 (bearer + private network), secrets mgmt; CI/CD; full test strategy (golden, regression

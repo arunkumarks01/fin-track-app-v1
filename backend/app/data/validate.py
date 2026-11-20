@@ -1,7 +1,8 @@
 """The validation gate (ARCHITECTURE §5). Every bar passes here before it can be stored.
 
 Reject → quarantine (kept with raw payload + reason, never silently dropped):
-  unparseable · non_positive_price · ohlc_order · negative_volume · duplicate_in_batch ·
+  unparseable · non_positive_price · ohlc_order · negative_volume · out_of_range (a value
+  beyond bigint — e.g. Kite's 2**64-2 volume, an unsigned underflow) · duplicate_in_batch ·
   index_gap (indices only).
 Flag but keep: large_gap (equities: suspected corporate action) · missing_sessions ·
   retimed_ts (Kite's legacy off-midnight daily stamp, re-stamped to 00:00 IST).
@@ -15,6 +16,8 @@ from typing import Any
 
 from app.broker.kite.client import CandleParseError, parse_candle
 from app.core.tradingdate import MARKET_TZ, canonical_daily_ts, trading_date_of
+
+INT8_MAX = 2**63 - 1  # Postgres bigint — anything beyond is garbage, never storable
 
 
 @dataclass(frozen=True)
@@ -78,6 +81,9 @@ def weekdays_between(a: date, b: date) -> int:
 
 
 def _bar_problem(bar: Bar) -> tuple[str, str] | None:
+    values = (bar.open, bar.high, bar.low, bar.close, bar.volume, bar.oi or 0)
+    if max(values) > INT8_MAX:
+        return "out_of_range", f"value above bigint: {max(values)}"
     if min(bar.open, bar.high, bar.low, bar.close) <= 0:
         return "non_positive_price", f"o={bar.open} h={bar.high} l={bar.low} c={bar.close}"
     if bar.high < max(bar.open, bar.close, bar.low) or bar.low > min(bar.open, bar.close):

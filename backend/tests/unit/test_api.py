@@ -122,3 +122,23 @@ async def test_unauthorized_short_circuits_before_handler(make_settings: Setting
         r = await c.post("/_side_effect")
     assert r.status_code == 401
     assert calls == []
+
+
+class _DeadPool:
+    @asynccontextmanager
+    async def acquire(self, timeout: float | None = None) -> AsyncIterator[_Conn]:  # noqa: ASYNC109
+        raise ConnectionRefusedError(61, "Connect call failed ('127.0.0.1', 5433)")
+        yield _Conn(True)  # pragma: no cover
+
+
+@pytest.mark.parametrize("path", ["/api/data/coverage", "/api/data/coverage/intraday"])
+async def test_lost_database_is_an_honest_503_not_a_500(
+    make_settings: SettingsFactory, path: str
+) -> None:
+    app = create_app(make_settings())
+    app.state.pool = _DeadPool()
+    app.state.scheduler = FakeScheduler()
+    async with _client(app) as c:
+        r = await c.get(path)
+    assert r.status_code == 503
+    assert r.json() == {"detail": "database unavailable", "error": "ConnectionRefusedError"}

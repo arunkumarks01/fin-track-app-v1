@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { formatDuration, formatInt, formatIstTime, formatPct } from "@/lib/format";
-import { fetchCoverage, fetchJobs, type IngestJob } from "@/lib/ingest";
+import { fetchCoverage, fetchJobs, type IngestJob, type IntradayProgress } from "@/lib/ingest";
 
 const FAST_MS = 5_000;
 const SLOW_MS = 30_000;
@@ -64,7 +64,8 @@ export function IngestPanel() {
     <div className="flex flex-col gap-4 text-sm">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span>
-          Daily ingestion <span className={style.className}>{style.label}</span>
+          {job.name === "intraday_ingest" ? "1-minute backfill" : "Daily ingestion"}{" "}
+          <span className={style.className}>{style.label}</span>
         </span>
         {job.startedAt && (
           <span className="text-neutral-400">
@@ -73,6 +74,8 @@ export function IngestPanel() {
           </span>
         )}
       </div>
+
+      {job.intraday && <IntradayProgressView p={job.intraday} />}
 
       <div>
         <div className="mb-1 flex justify-between text-neutral-400">
@@ -133,6 +136,46 @@ export function IngestPanel() {
             ))}
           </ul>
         )}
+      </div>
+    </div>
+  );
+}
+
+function IntradayProgressView({ p }: { p: IntradayProgress }) {
+  const used = p.dbSizeGb ?? 0;
+  const pct = Math.min(100, (100 * used) / p.budgetGb);
+  return (
+    <div className="flex flex-col gap-2 rounded border border-neutral-800 p-3">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1">
+        <dt className="text-neutral-400">Rounds · windows</dt>
+        <dd>
+          {formatInt(p.rounds)} · {formatInt(p.windows)}
+        </dd>
+        <dt className="text-neutral-400">1-minute bars added (this run)</dt>
+        <dd>{formatInt(p.inserted)}</dd>
+        <dt className="text-neutral-400">Every symbol back to</dt>
+        <dd>{p.deepestCommonDate ?? "—"}</dd>
+      </dl>
+      <div>
+        <div className="mb-1 flex justify-between text-neutral-400">
+          <span>Database vs budget</span>
+          <span>
+            {p.dbSizeGb === null ? "—" : `${p.dbSizeGb.toFixed(2)} GB`} / {p.budgetGb} GB
+          </span>
+        </div>
+        <div
+          className="h-2 overflow-hidden rounded bg-neutral-800"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={p.budgetGb}
+          aria-valuenow={used}
+          aria-label="Database size versus disk budget"
+        >
+          <div
+            className={`h-full ${pct > 90 ? "bg-amber-500" : "bg-emerald-500"}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
       </div>
     </div>
   );

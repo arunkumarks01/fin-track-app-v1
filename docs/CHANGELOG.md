@@ -1,6 +1,71 @@
 # Changelog
 
-## [Unreleased] — Phase 1a: data foundation core (2026-11-19)
+## [Unreleased] — Phase 1b: 1-minute intraday source + on-read derivation (2026-11-19)
+
+### Added
+- **Migration 0004:**
+  - `app.ohlcv_1m`: the single stored intraday source. A compact hypertable with int4 paisa, smallint local `sid` and PK `(sid, ts)`, no default ts index, about 90 B/row.
+  - `app.instrument_ids`: a stable smallint map for the universe (never Kite's bigint token).
+  - `app.intraday_sessions`: per-symbol session counts.
+  - `app.exchange_sessions`: the derived calendar (session open + benchmark minutes).
+  - `app.intraday_cursor`.
+  - quarantine reason `out_of_range`.
+- **THE derivation** `app.intraday_bars()` (SQL) + `derive_bars()` (Python, the only entry point; whole sessions only). It uses `time_bucket(…, 'Asia/Kolkata', origin => session open)`. **Golden-tested against real Kite native 5m/15m/30m/60m bars: exact match** on timestamps, OHLC and volume, both symbols, a regular day and the 2024-11-01 **muhurat session (opened 18:00, which a fixed 09:15 origin would misalign)**.
+- **1-minute validation:** minute alignment, positive/ordered prices, int4 range, duplicate minutes (every copy quarantined).
+- **Newest-first round-robin extractor:**
+  - every symbol's window *k* lands before any window *k+1* (round barrier)
+  - bounded concurrency (`INTRADAY_CONCURRENCY`), with Kite's 3 req/s still enforced
+  - resumable cursors; floors at `INTRADAY_FLOOR_DATE` or after `INTRADAY_EMPTY_WINDOWS_STOP` empty windows, so it never reaches back into pre-listing "ghost" history
+  - **hard `INTRADAY_DB_BUDGET_GB` = 35 GB that fails closed**, with headroom for WAL, a local dump and the PITR archive documented in DEC-1B
+- **Calendar-aware completeness:** expected minutes = the exchange benchmark's count that session, never a hardcoded 375. Sessions are complete / short / excess / unknown, plus missing sessions. Short sessions are **flagged for review, never auto-quarantined**.
+- **API:**
+  - `POST /api/data/ingest/intraday` (bearer, background, live progress)
+  - `GET /api/data/coverage/intraday[?review=SYMBOL]`
+  - `GET /api/data/bars?symbol&timeframe&start&end` (≤31 days)
+  - `INTRADAY_INGEST_CRON` 16:40 IST
+- **Reliability:**
+  - any DB-connectivity error is an **honest 503 "database unavailable"** on every endpoint (it was a raw 500 on `/api/data/coverage`)
+  - the intraday job **auto-resumes after a lost DB** (`INTRADAY_DB_RETRIES` × `INTRADAY_DB_RETRY_WAIT_SECONDS`) but never retries a budget or auth stop
+- **Frontend:** the panel shows live 1-minute progress (rounds, windows, bars added, how far back every symbol reaches, DB size vs budget).
+
+### Changed
+- ARCHITECTURE §5 / BUILD_PLAN / SCOPE / CLAUDE.md: the derivation of record is on-read session-anchored `time_bucket` (DEC-1B), superseding the "scheduled rollup job". §5 corrected from a fixed 09:15 origin to the **per-session open**. 1d stays Kite-native (NSE's official close ≠ the last 1m close).
+- **v1 retired** (DEC-V1R): its services were stopped and disabled and its 31 GB database dropped (no backup, at the user's request). VPS free disk went from 27 GB to 58 GB.
+
+### Fixed
+- **An overflowing volume crashed the whole backfill instead of being quarantined.** On NSE:COROMANDEL, 2015-03-13 09:15, Kite returned a volume of `18446744073709551614` (2⁶⁴−2, an unsigned underflow). The minute validator bounded prices but not volume, so the bigint `COPY` raised `OverflowError` after 2h20m and 206.8M bars. Both validators now reject any value beyond bigint as `out_of_range`; the daily one checks prices, volume and OI. Covered by unit cases using the real payload, plus a DB regression test showing the run completes and quarantines exactly that minute. Cursors were intact, so the run resumed where it stopped.
+
+- **`/api/data/coverage/intraday` took over 5 minutes on real data.** Its `missing_sessions` used a correlated anti-join per exchange session against an unindexed CTE, which is quadratic. It now uses a linear count: benchmark sessions in each symbol's span minus that symbol's matched sessions (exact, because `(sid, session_date)` is unique). The report now takes **0.49 s**. A new DB test pins the semantics: a mid-span hole counts, and sessions before a late listing don't.
+
+### Real-data results (2026-11-20, VPS `fintrack_v2`)
+- The backfill finished: status ok, 0 symbol errors, every symbol walked back to its floor (newest-first). The first run reached 2015 before the overflow crash; the resume took 2 rounds and 225 windows.
+- **210,756,908 1-minute bars**, 224 symbols, **2015-01-09 → 2026-11-19**, database **19.96 GB of the 35 GB budget**. 156 symbols reach back to early 2015; the other 68 start at their listing date (2016–2025).
+- 566,709 symbol-sessions:
+  - 508,832 complete, 41,637 short, 16,240 excess, 0 unknown
+  - 289 missing sessions, and 788,645 missing minutes
+- 1m quarantine: 39,703 `non_canonical_ts`, 24,475 `non_positive_price`, 39 `ohlc_order`, 1 `out_of_range`.
+- **The intraday gate is NOT green.** Findings that need a decision (below).
+
+### Findings needing a decision (gate stays closed)
+1. **The benchmark is not a reliable session calendar.** NIFTY 50's own 1m series is gappy:
+   - 254–280 minutes on many 2015 sessions
+   - 336 on 2017-02-21, 374 on 2023-06-05, 368 on 2023-06-14
+   - 54 on 2021-02-24, NSE's outage day, when equities show 224
+
+   On 107 dates, ≥100 symbols "exceed" the benchmark. That accounts for 16,154 of the 16,240 excess sessions. On those dates, a stock with the same gaps would be falsely "complete", which breaks the honest-surfaces law. The DEC-1B rule "expected = benchmark count" needs revising.
+2. **Since 2026-08-03, every NSE equity's 1m series ends at 15:14 while indices run to 15:29.** This holds on all 76 sessions since then (360 vs 375). It might be a real market-structure change (for example a closing-auction session) or a Kite feed defect; this isn't verified yet. It makes about 16.5k sessions "short by 15". RELIANCE's 360/375 on 2026-11-18 is this same effect.
+3. **Kite's 2015 1m data is dirty:**
+   - 39,703 bars stamped a second or more past the minute (for example 12:48:01). All are from 2015, across 155 symbols, and they're quarantined, which leaves holes.
+   - Whole sessions of zero prices: ICICIBANK, INFY and ITC on 2015-04-27 → 05-13 (4,500 bars each).
+4. FORCEMOT has a contiguous 76-session hole at the source (2023-10-26 → 2024-02-13); daily has the same gap. It's correctly flagged for review.
+
+### Observed on real data
+- Kite's 1-minute history starts in the first half of 2015 (none on 2015-01-06; full sessions from 2015-06-02).
+- RELIANCE on 2026-11-18 has 360/375 minutes: 15:15–15:29 is missing at the source, and Kite's own 5m bars stop at 15:10.
+- Throughput: 0.42 windows/s sequential (2.4 s/window, latency-bound) → 1.26 windows/s with 4 in flight (about 18.7k rows/s).
+- The dev SSH tunnel is reset by the network path roughly every 25–60 minutes. This is handled by a supervised tunnel plus job auto-resume; running the backend on the VPS (Phase 9) removes the tunnel entirely.
+
+## Phase 1a: data foundation core (2026-11-19)
 
 ### Added
 - **Migration 0002**: `instruments`, `universe`, `kite_session`, `ingest_cursor`, `ohlcv_quarantine`, `ohlcv_flags`.

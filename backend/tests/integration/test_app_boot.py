@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from app.core.config import Settings
-from app.data.jobs import DAILY_INGEST_JOB_ID
+from app.data.jobs import DAILY_INGEST_JOB_ID, INTRADAY_INGEST_JOB_ID
 from app.db.migrate import discover
 from app.db.retention import CLEANUP_JOB_ID
 from app.main import create_app
@@ -23,7 +23,7 @@ async def test_boot_migrates_serves_and_restarts_cleanly(db: Any, db_settings: S
         async with app.router.lifespan_context(app):
             assert app.state.scheduler.running
             assert sorted(j.id for j in app.state.scheduler.get_jobs()) == sorted(
-                [CLEANUP_JOB_ID, DAILY_INGEST_JOB_ID]
+                [CLEANUP_JOB_ID, DAILY_INGEST_JOB_ID, INTRADAY_INGEST_JOB_ID]
             )
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:

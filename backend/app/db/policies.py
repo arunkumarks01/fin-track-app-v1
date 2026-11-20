@@ -27,6 +27,7 @@ def chunk_policies_from(settings: Settings) -> list[ChunkPolicy]:
     return [
         ChunkPolicy("app.ohlcv_candles", timedelta(days=settings.ohlcv_chunk_interval_days)),
         ChunkPolicy("app.ticks", timedelta(hours=settings.ticks_chunk_interval_hours)),
+        ChunkPolicy("app.ohlcv_1m", timedelta(days=settings.intraday_chunk_interval_days)),
     ]
 
 

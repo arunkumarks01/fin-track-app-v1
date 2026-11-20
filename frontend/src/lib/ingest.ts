@@ -28,6 +28,28 @@ function optStr(v: unknown, what: string): string | null {
 
 export type JobStatus = "idle" | "running" | "ok" | "failed";
 
+export type IntradayProgress = {
+  rounds: number;
+  windows: number;
+  inserted: number;
+  deepestCommonDate: string | null;
+  dbSizeGb: number | null;
+  budgetGb: number;
+};
+
+function parseIntraday(v: unknown): IntradayProgress | null {
+  if (!isRecord(v)) return null;
+  return {
+    rounds: num(v.rounds, "rounds"),
+    windows: num(v.windows, "windows"),
+    inserted: num(v.inserted, "inserted"),
+    deepestCommonDate: optStr(v.deepest_common_date, "deepest_common_date"),
+    dbSizeGb:
+      v.db_size_gb === null || v.db_size_gb === undefined ? null : num(v.db_size_gb, "db_size_gb"),
+    budgetGb: num(v.budget_gb, "budget_gb"),
+  };
+}
+
 export type IngestJob = {
   busy: boolean;
   name: string;
@@ -38,6 +60,7 @@ export type IngestJob = {
   inserted: number | null;
   quarantined: number | null;
   symbolErrors: number | null;
+  intraday: IntradayProgress | null;
 };
 
 export function parseJobs(body: unknown): IngestJob {
@@ -58,6 +81,7 @@ export function parseJobs(body: unknown): IngestJob {
     inserted: backfill ? num(backfill.inserted, "inserted") : null,
     quarantined: backfill ? num(backfill.quarantined, "quarantined") : null,
     symbolErrors: backfill ? num(backfill.errors, "errors") : null,
+    intraday: parseIntraday(result.intraday ?? result.progress),
   };
 }
 

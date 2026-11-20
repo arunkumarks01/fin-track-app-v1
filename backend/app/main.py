@@ -12,9 +12,11 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import asyncpg
 import httpx
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from app.api.data import router as data_router
 from app.api.health import router as health_router
@@ -28,7 +30,7 @@ from app.core.config import Settings, get_settings
 from app.core.logging import setup_logging
 from app.core.scheduler import build_scheduler, register_job
 from app.core.tradingdate import MARKET_TZ
-from app.data.jobs import DAILY_INGEST_JOB_ID, IngestRunner
+from app.data.jobs import DAILY_INGEST_JOB_ID, INTRADAY_INGEST_JOB_ID, IngestRunner
 from app.db.migrate import migrate
 from app.db.policies import apply_storage_policies
 from app.db.pool import create_pool
@@ -37,6 +39,24 @@ from app.db.retention import CLEANUP_JOB_ID, ticks_cleanup_job
 __version__ = "0.0.1"
 
 log = logging.getLogger(__name__)
+
+# A lost database (e.g. the dev SSH tunnel dropping) is an honest 503 on every endpoint —
+# never a raw 500 and never a stale or guessed answer (laws 2 + 9).
+DB_UNAVAILABLE: tuple[type[Exception], ...] = (
+    OSError,
+    TimeoutError,
+    asyncpg.InterfaceError,
+    asyncpg.PostgresConnectionError,
+)
+
+
+async def _db_unavailable(request: Request, exc: Exception) -> JSONResponse:
+    log.warning(
+        "database unavailable on %s %s: %s", request.method, request.url.path, type(exc).__name__
+    )
+    return JSONResponse(
+        {"detail": "database unavailable", "error": type(exc).__name__}, status_code=503
+    )
 
 
 def create_app(
@@ -77,6 +97,12 @@ def create_app(
                 CronTrigger.from_crontab(cfg.daily_ingest_cron, timezone=MARKET_TZ),
                 job_id=DAILY_INGEST_JOB_ID,
             )
+            register_job(
+                scheduler,
+                ingest.intraday_ingest,
+                CronTrigger.from_crontab(cfg.intraday_ingest_cron, timezone=MARKET_TZ),
+                job_id=INTRADAY_INGEST_JOB_ID,
+            )
             scheduler.start()
             app.state.pool = pool
             app.state.scheduler = scheduler
@@ -99,6 +125,8 @@ def create_app(
     app.state.settings = cfg
     app.state.clock = clk
     app.add_middleware(BearerAuthMiddleware, token=cfg.api_auth_token)
+    for exc_type in DB_UNAVAILABLE:
+        app.add_exception_handler(exc_type, _db_unavailable)
     app.include_router(health_router)
     app.include_router(kite_router)
     app.include_router(data_router)

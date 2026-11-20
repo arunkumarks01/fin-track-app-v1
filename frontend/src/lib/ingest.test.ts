@@ -41,6 +41,7 @@ describe("parseJobs", () => {
       inserted: null,
       quarantined: null,
       symbolErrors: null,
+      intraday: null,
     });
   });
 
@@ -64,6 +65,47 @@ describe("parseJobs", () => {
     { busy: true, last: { ...RUNNING.last, result: { backfill: { inserted: "many" } } } },
   ])("rejects an unexpected shape: %o", (body) => {
     expect(() => parseJobs(body)).toThrow(IngestContractError);
+  });
+});
+
+describe("parseJobs intraday", () => {
+  it("reads live intraday progress while running", () => {
+    const live = {
+      busy: true,
+      last: {
+        ...RUNNING.last,
+        name: "intraday_ingest",
+        result: {
+          progress: {
+            rounds: 3,
+            windows: 600,
+            inserted: 12_000_000,
+            already_stored: 0,
+            quarantined: 0,
+            errors: 0,
+            db_size_gb: 3.2,
+            budget_gb: 35,
+            deepest_common_date: "2026-03-01",
+          },
+        },
+      },
+    };
+    expect(parseJobs(live).intraday).toEqual({
+      rounds: 3,
+      windows: 600,
+      inserted: 12_000_000,
+      deepestCommonDate: "2026-03-01",
+      dbSizeGb: 3.2,
+      budgetGb: 35,
+    });
+  });
+
+  it("rejects a malformed progress block", () => {
+    const bad = {
+      busy: true,
+      last: { ...RUNNING.last, result: { progress: { rounds: "three", budget_gb: 35 } } },
+    };
+    expect(() => parseJobs(bad)).toThrow(IngestContractError);
   });
 });
 

@@ -74,6 +74,7 @@ async def test_hypertables_exist_without_tsl_features(db: Any) -> None:
            ORDER BY hypertable_name"""
     )
     assert [(r["hypertable_name"], r["compression_enabled"]) for r in rows] == [
+        ("ohlcv_1m", False),
         ("ohlcv_candles", False),
         ("ticks", False),
     ]
@@ -97,6 +98,7 @@ async def test_chunk_intervals_follow_config(db: Any, db_settings: Settings) -> 
            WHERE hypertable_schema = 'app' ORDER BY hypertable_name"""
     )
     assert [(r["hypertable_name"], r["time_interval"]) for r in rows] == [
+        ("ohlcv_1m", timedelta(days=7)),
         ("ohlcv_candles", timedelta(days=7)),
         ("ticks", timedelta(hours=6)),
     ]

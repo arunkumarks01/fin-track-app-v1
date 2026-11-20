@@ -79,7 +79,7 @@ each applied in its own transaction and recorded with a SHA-256 checksum in
 - retention is an in-process APScheduler job calling `drop_chunks` on `ticks` only
   (`app/db/retention.py`, `TICKS_RETENTION_CRON`); `ohlcv_candles` is never pruned, since
   daily history back to 2015 must survive;
-- higher timeframes come from a scheduled rollup job and disk is handled by the Parquet cold tier (both Phase 1).
+- higher intraday timeframes are derived **on read** from `ohlcv_1m` by `app.intraday_bars()` (DEC-1B), and disk is handled by the Parquet cold tier (Phase 1d).
 
 **Dedup key = trading identity.** `ohlcv_candles` is unique on `(symbol, timeframe, ts)`, and a
 CHECK forces 1d bars to `ts` = 00:00 IST of the trading date (`canonical_daily_ts`). The same
@@ -128,6 +128,20 @@ injected `Clock` (`app/core/clock.py`). Never a source of truth.
 - `jobs.py` + `app/api/data.py`: ingestion runs **in-process** (one job at a time) from
   `POST /api/data/ingest/daily` or `DAILY_INGEST_CRON`. `GET /api/data/coverage` is the
   Phase-1 gate report (`coverage.py`).
+
+**Intraday (Phase 1b, DEC-1B)** — `app/data/intraday.py`, `extract_intraday.py`, `intraday_coverage.py`:
+- `app.ohlcv_1m` is the **only** stored intraday source (int4 paisa, smallint `sid` from
+  `app.instrument_ids`; never Kite's bigint token).
+- Higher timeframes come **only** from the SQL function `app.intraday_bars()` via
+  `derive_bars()`, anchored to each session's real open in `app.exchange_sessions`. Never
+  resample in pandas, and never use a midnight or fixed-09:15 origin (muhurat opens at 18:00).
+  The golden tests in `tests/integration/test_intraday_derive.py` must reproduce Kite's native
+  bars exactly.
+- The extractor fetches newest-first in round-robin windows, is resumable, and stops on
+  `INTRADAY_DB_BUDGET_GB`.
+- Completeness compares to the benchmark's minutes that session (no hardcoded 375); shortfalls
+  are flagged for review, never quarantined.
+- 1d candles stay Kite-native (the official close is not the last 1m close).
 
 **Frontend**: the browser calls same-origin `/api/*`, which Next rewrites to `BACKEND_URL`
 (`next.config.ts`). Responses are parsed strictly (`src/lib/health.ts`) — an unexpected shape is

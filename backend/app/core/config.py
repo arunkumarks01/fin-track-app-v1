@@ -114,6 +114,25 @@ class Settings(BaseSettings):
     daily_bar_final_after_ist: time = time(16, 0)  # today's 1d bar is partial before this
     daily_ingest_cron: str = "15 16 * * 1-5"  # IST
 
+    # --- intraday (Phase 1b, DEC-1B): 1-minute is the single stored source ---
+    intraday_floor_date: date = date(2015, 1, 1)  # never request older (Kite's 1m starts ~2015)
+    intraday_empty_windows_stop: int = Field(default=3, ge=1)  # consecutive empty → floor
+    # Hard cap on fintrack_v2's total size during intraday backfill (fail closed when hit).
+    # Budget on the VPS (58 GB free after retiring v1): 35 GB DB + ~3 GB WAL + ~7 GB one local
+    # compressed dump + ~13 GB WAL archive / PITR (D24). Lower it if the disk changes.
+    intraday_db_budget_gb: float = Field(default=35.0, gt=0)
+    intraday_budget_check_every: int = Field(default=20, ge=1)  # windows between size checks
+    intraday_chunk_interval_days: int = Field(default=7, ge=1)
+    # windows in flight per round (Kite's 3 req/s limit is still enforced by the limiter)
+    intraday_concurrency: int = Field(default=4, ge=1, le=16)
+    # lost-DB auto-resume (e.g. the dev SSH tunnel resetting): attempts + wait between
+    intraday_db_retries: int = Field(default=20, ge=0)
+    intraday_db_retry_wait_seconds: float = Field(default=30.0, ge=0)
+    intraday_benchmarks: dict[str, str] = Field(
+        default_factory=lambda: {"NSE": "NSE:NIFTY 50", "BSE": "BSE:SENSEX"}
+    )
+    intraday_ingest_cron: str = "40 16 * * 1-5"  # IST, after the daily ingest
+
     # --- validation gate ---
     validation_large_gap_pct: int = Field(default=20, ge=1)  # open vs prev close
     validation_missing_weekdays_flag: int = Field(default=3, ge=1)
@@ -137,7 +156,7 @@ class Settings(BaseSettings):
             raise ValueError("PAPER_MODE must be true — live trading is gated behind Phase 10")
         return True
 
-    @field_validator("ticks_retention_cron", "daily_ingest_cron")
+    @field_validator("ticks_retention_cron", "daily_ingest_cron", "intraday_ingest_cron")
     @classmethod
     def _valid_cron(cls, value: str) -> str:
         from apscheduler.triggers.cron import CronTrigger

@@ -9,10 +9,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+import asyncpg
+
 from app.broker.kite.client import KiteAuthError, KiteClient, KiteError
 from app.core.clock import Clock
 from app.core.config import Settings
 from app.data.extract_daily import RunReport, run_daily_backfill
+from app.data.extract_intraday import IntradayReport, run_intraday_backfill
 from app.data.instruments import (
     InstrumentsError,
     build_universe,
@@ -24,6 +27,15 @@ from app.data.instruments import (
 log = logging.getLogger(__name__)
 
 DAILY_INGEST_JOB_ID = "daily_ingest"
+INTRADAY_INGEST_JOB_ID = "intraday_ingest"
+
+# connectivity losses worth an automatic resume (the run is resumable from its cursors)
+DB_LOST: tuple[type[Exception], ...] = (
+    OSError,
+    TimeoutError,
+    asyncpg.InterfaceError,
+    asyncpg.PostgresConnectionError,
+)
 
 
 @dataclass
@@ -48,8 +60,14 @@ class JobState:
 
 class IngestRunner:
     def __init__(
-        self, pool: Any, client: KiteClient | None, settings: Settings, clock: Clock
+        self,
+        pool: Any,
+        client: KiteClient | None,
+        settings: Settings,
+        clock: Clock,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
+        self._sleep = sleep
         self._pool = pool
         self._client = client
         self._s = settings
@@ -122,6 +140,45 @@ class IngestRunner:
             return out
 
         return await self._run("daily_ingest", work)
+
+    async def intraday_ingest(self, symbols: list[str] | None = None) -> JobState:
+        """Newest-first 1m backfill + catch-up. Progress is published live in the job state."""
+
+        async def work() -> dict[str, Any]:
+            state = self.last
+
+            def progress(report: IntradayReport) -> None:
+                state.result = {"progress": report.totals()}
+
+            client = self._require_client()
+            attempt = 0
+            while True:
+                attempt += 1
+                try:
+                    report = await run_intraday_backfill(
+                        self._pool, client, self._s, self._clock, symbols, progress
+                    )
+                    break
+                except DB_LOST as exc:
+                    if attempt > self._s.intraday_db_retries:
+                        raise
+                    log.warning(
+                        "intraday: database lost (%s); resume attempt %d/%d in %.0fs",
+                        type(exc).__name__,
+                        attempt,
+                        self._s.intraday_db_retries,
+                        self._s.intraday_db_retry_wait_seconds,
+                    )
+                    state.result = {**state.result, "resumes": attempt}
+                    await self._sleep(self._s.intraday_db_retry_wait_seconds)
+            return {
+                "resumes": attempt - 1,
+                "intraday": report.totals(),
+                "stopped_reason": report.stopped_reason,
+                "errors": [{"symbol": s, "error": e} for s, e in report.errors.items()][:50],
+            }
+
+        return await self._run("intraday_ingest", work)
 
     def start(self, coro_factory: Callable[[], Awaitable[JobState]]) -> bool:
         """Start a background job unless one is running. Returns False when busy."""

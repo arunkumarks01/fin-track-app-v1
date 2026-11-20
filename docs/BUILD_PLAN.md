@@ -21,7 +21,7 @@ mock-Kite / mock-LLM, candle factory), CI. *Gate:* boots; lint/type clean; CI gr
 **Phase 1 — Data foundation (~2–3 wk) — keystone.** Ingest equity/index/futures/options
 candles (daily→2015, intraday to Kite limit) + **tick storage** + **options chain** +
 corporate actions (Kite primary) + fundamentals + FII/DII + bulk deals + economic calendar +
-global/VIX + news. Dedup-by-trading-date, **scheduled rollup job** for higher timeframes (Apache-build fallback for continuous aggregates; same single-source derivation), raw + adjust-on-read,
+global/VIX + news. Dedup-by-trading-date, **1m as the single intraday source with higher timeframes derived on read by a session-anchored `time_bucket` function** (DEC-1B; supersedes the earlier "scheduled rollup job" fallback for continuous aggregates; same single-source derivation), raw + adjust-on-read,
 validation + quarantine, resumable rate-limited extractor, Parquet cold store (the primary space saver; ticks exported before the retention job drops them). *Gate:*
 coverage report green (≥95% symbols ≥250 clean daily bars, indices→2015, 0 dupes). **No
 scoring before this passes.**
