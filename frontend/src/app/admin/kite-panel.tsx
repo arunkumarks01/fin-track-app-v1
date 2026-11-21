@@ -7,10 +7,10 @@ import { fetchKiteStatus, fetchLoginUrl, type KiteState } from "@/lib/admin";
 import { formatIstDateTime } from "@/lib/format";
 
 const LABEL: Record<KiteState, { text: string; className: string }> = {
-  connected: { text: "▲ connected", className: "text-emerald-400" },
-  expired: { text: "▼ expired", className: "text-amber-400" },
-  disconnected: { text: "▼ not logged in", className: "text-amber-400" },
-  not_configured: { text: "✕ not configured", className: "text-red-400" },
+  connected: { text: "▲ connected", className: "text-gain" },
+  expired: { text: "▼ expired", className: "text-warn" },
+  disconnected: { text: "▼ not logged in", className: "text-warn" },
+  not_configured: { text: "✕ not configured", className: "text-loss" },
 };
 
 export function KitePanel() {
@@ -31,10 +31,10 @@ export function KitePanel() {
     }
   }
 
-  if (kite.isPending) return <p className="text-neutral-400">Checking Kite session…</p>;
+  if (kite.isPending) return <p className="text-muted-foreground">Checking Kite session…</p>;
   if (kite.error) {
     return (
-      <p role="alert" className="text-red-400">
+      <p role="alert" className="text-loss">
         ✕ Couldn&apos;t read the Kite session — treat it as not connected.
       </p>
     );
@@ -44,17 +44,19 @@ export function KitePanel() {
   return (
     <div className="flex flex-col gap-3 text-sm">
       <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1">
-        <dt className="text-neutral-400">Session</dt>
+        <dt className="text-muted-foreground">Session</dt>
         <dd className={style.className}>{style.text}</dd>
         {k.userId && (
           <>
-            <dt className="text-neutral-400">User</dt>
+            <dt className="text-muted-foreground">User</dt>
             <dd>{k.userId}</dd>
           </>
         )}
         {k.expiresAt && (
           <>
-            <dt className="text-neutral-400">{k.status === "connected" ? "Expires" : "Expired"}</dt>
+            <dt className="text-muted-foreground">
+              {k.status === "connected" ? "Expires" : "Expired"}
+            </dt>
             <dd>
               {formatIstDateTime(k.expiresAt)}
               {k.hoursLeft !== null && ` · ${k.hoursLeft.toFixed(1)} h left`}
@@ -67,15 +69,15 @@ export function KitePanel() {
           <button
             type="button"
             onClick={login}
-            className="rounded border border-sky-600 px-3 py-1 text-sky-300 hover:bg-sky-950"
+            className="rounded border border-primary px-3 py-1 text-primary hover:bg-accent"
           >
             {k.status === "connected" ? "Log in again" : "Log in to Kite"}
           </button>
-          <span className="text-neutral-500">Opens Kite in a new tab; you sign in there.</span>
+          <span className="text-muted-foreground">Opens Kite in a new tab; you sign in there.</span>
         </div>
       )}
       {loginError && (
-        <p role="alert" className="text-red-400">
+        <p role="alert" className="text-loss">
           ✕ {loginError}
         </p>
       )}

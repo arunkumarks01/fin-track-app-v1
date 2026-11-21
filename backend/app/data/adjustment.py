@@ -50,6 +50,7 @@ from typing import Any
 from app.core.clock import Clock
 from app.core.config import Settings
 from app.data.coverage import listing_dates
+from app.data.nse_archive import PD_SERIES as SHARE_SERIES
 from app.data.nse_archive import parse_purpose
 from app.data.session_calendar import refresh_session_status
 
@@ -712,14 +713,19 @@ async def load_observations(conn: Any, symbol: str) -> list[DayObs]:
 
 
 async def load_actions(conn: Any, symbol: str) -> list[Action]:
+    """The company's actions on its SHARES only. NSE lists bonds (NCD interest/redemption),
+    preference shares etc. under the same symbol in other series; those never move the share
+    price, so they must not force windows or "explain" a step (found 2026-11-21: 750 such
+    actions across 21 companies)."""
     rows = await conn.fetch(
         """SELECT array_agg(id ORDER BY id) AS ids, ex_date, purpose, kinds,
                   split_from_paisa, split_to_paisa, bonus_new, bonus_held, dividend_paisa
-           FROM app.corporate_actions WHERE symbol = $1
+           FROM app.corporate_actions WHERE symbol = $1 AND series = ANY($2::text[])
            GROUP BY ex_date, purpose, kinds, split_from_paisa, split_to_paisa, bonus_new,
                     bonus_held, dividend_paisa
            ORDER BY ex_date""",
         symbol,
+        list(SHARE_SERIES),
     )
     return [
         Action(

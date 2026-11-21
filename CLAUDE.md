@@ -180,9 +180,20 @@ injected `Clock` (`app/core/clock.py`). Never a source of truth.
   A session with no bars is `not_traded` (not missing) only for an equity NSE's archive says didn't trade that day.
 - 1d candles stay Kite-native (the official close is not the last 1m close).
 
+**Stock page (DEC-STOCKPAGE)** — `app/data/stock.py`, `/api/data/stock`, frontend `/stocks`: read-only, one stock's
+names, share-series actions vs Kite's measured prices, data health — reusing the gate's own queries so no number differs
+from Admin. Corporate actions count only share series EQ/BE/BZ (bonds/preference shares share the symbol). Pages are
+full width.
+
 **Charts (DEC-CHART)** — `app/data/candles.py`, `/api/data/candles`, frontend `/charts`: openalgo-charts over
 FinTrack's own candles. The backend serves every interval (never re-bucket in the browser); Raw = as traded, for 1m/D/W
 equities only. The widget's studies are visual-only, never the engine; no `onOrder`.
+
+**UI (DEC-UI)**: shadcn/ui components live in `frontend/src/components/ui/` (ours to edit; add more with
+`npx shadcn@4.23.0 add <name>`, then re-pin any package it bumps and keep `shadcn` itself out of `package.json`). Use theme
+tokens (`bg-card`, `text-muted-foreground`, `text-gain`/`text-loss`/`text-warn`), never raw greys; direction always has
+▲ ▼ – too. Theme = `.dark` on `<html>` (`src/lib/theme.ts`). App shell: `src/components/app-sidebar.tsx` +
+`app-header.tsx`; pages render inside `SidebarInset` (a `<main>`), so pages use `<div>`.
 
 **Frontend**: the browser calls same-origin `/api/*`, which Next rewrites to `BACKEND_URL`
 (`next.config.ts`). Responses are parsed strictly (`src/lib/health.ts`) — an unexpected shape is

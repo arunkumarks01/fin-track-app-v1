@@ -30,6 +30,7 @@ WITH s AS (
     JOIN app.instrument_ids i USING (sid)
     LEFT JOIN app.intraday_session_status st
            ON st.sid = x.sid AND st.session_date = x.session_date
+    WHERE ($1::text IS NULL OR i.symbol = $1)
 ),
 per AS (
     SELECT symbol, min(sid) AS sid, min(session_date) AS first_d, max(session_date) AS last_d,
@@ -100,7 +101,7 @@ class SymbolCompleteness:
         return self.short + self.excess + self.missing_sessions
 
 
-async def completeness(conn: Any) -> list[SymbolCompleteness]:
+async def completeness(conn: Any, symbol: str | None = None) -> list[SymbolCompleteness]:
     return [
         SymbolCompleteness(
             r["symbol"],
@@ -117,7 +118,7 @@ async def completeness(conn: Any) -> list[SymbolCompleteness]:
             r["market_short"],
             r["not_traded_sessions"],
         )
-        for r in await conn.fetch(_SQL)
+        for r in await conn.fetch(_SQL, symbol)
     ]
 
 

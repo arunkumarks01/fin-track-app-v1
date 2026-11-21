@@ -50,3 +50,37 @@ export function paisaToRupees(paisa: number): number {
   if (!Number.isInteger(paisa)) throw new Error(`paisa must be an integer, got ${paisa}`);
   return paisa / 100;
 }
+
+const rupeeFormat = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** Integer paisa → "₹1,234.50" (display only). */
+export function formatRupees(paisa: number): string {
+  return rupeeFormat.format(paisaToRupees(paisa));
+}
+
+const priceFormat = new Intl.NumberFormat("en-IN", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** Integer paisa → "25,514.30" without a currency sign (index points, chart axes). */
+export function formatPrice(paisa: number): string {
+  return priceFormat.format(paisaToRupees(paisa));
+}
+
+const istDate = new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata",
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
+
+/** Unix seconds → "19 Nov 2026" (IST trading date). */
+export function formatIstDate(unixSeconds: number): string {
+  return istDate.format(new Date(unixSeconds * 1000));
+}

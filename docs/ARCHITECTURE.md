@@ -53,7 +53,7 @@ only when their validation passes — a gate, not a scope cut.
 | Broker/data | **Kite Connect** (direct) | authoritative NSE data + execution; no OpenAlgo middle layer |
 | LLM | provider abstraction: Claude CLI now → Groq later | used only for news + explanation; fail-closed |
 | Scheduler | APScheduler in-process, `max_instances=1`, `coalesce=True` | no double-runs, no lock hack |
-| Frontend | Next.js 15 + Tailwind; Recharts (analytics) + one candlestick lib | design-system first; honest-UI |
+| Frontend | Next.js 15 + Tailwind + shadcn/ui (copied, owned components; DEC-UI); Recharts (analytics) + one candlestick lib | design-system first; honest-UI; light + dark |
 | Backtest | custom bar-replay + Parquet cold store | deterministic, cost-aware |
 | Notifications | Telegram (webhook secret mandatory) | approvals + alerts |
 | Deploy | single VPS, behind Tailscale/private network; bearer-token on mutating routes | personal app; no open order endpoints |

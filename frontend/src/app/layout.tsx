@@ -1,9 +1,18 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { Geist } from "next/font/google";
 import type { ReactNode } from "react";
 
 import "./globals.css";
+import { AppHeader } from "@/components/app-header";
+import { AppSidebar } from "@/components/app-sidebar";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
+import { cn } from "@/lib/utils";
+
 import { Providers } from "./providers";
+
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "FinTrack v2",
@@ -12,22 +21,23 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en" className="dark">
-      <body className="bg-neutral-950 text-neutral-100 antialiased">
-        <nav className="border-b border-neutral-800">
-          <div className="mx-auto flex max-w-5xl gap-5 px-4 py-2 text-sm text-neutral-300">
-            <Link href="/" className="hover:text-white">
-              Home
-            </Link>
-            <Link href="/charts" className="hover:text-white">
-              Charts
-            </Link>
-            <Link href="/admin" className="hover:text-white">
-              Admin
-            </Link>
-          </div>
-        </nav>
-        <Providers>{children}</Providers>
+    // the boot script sets the theme class before paint; React must not "fix" it back
+    <html lang="en" className={cn("dark font-sans", geist.variable)} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
+      <body className="antialiased">
+        <Providers>
+          <TooltipProvider>
+            <SidebarProvider>
+              <AppSidebar />
+              <SidebarInset className="min-w-0">
+                <AppHeader />
+                {children}
+              </SidebarInset>
+            </SidebarProvider>
+          </TooltipProvider>
+        </Providers>
       </body>
     </html>
   );

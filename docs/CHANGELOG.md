@@ -1,5 +1,59 @@
 # Changelog
 
+## [Unreleased] — New look: shadcn/ui app shell, light + dark, Dashboard (DEC-UI) (2026-11-21)
+
+- **UI kit:** shadcn/ui components copied into `frontend/src/components/ui/` (sidebar, card, badge, button, chart,
+  table, tooltip, skeleton, sheet, dropdown, input, separator). New pinned packages are listed in DEC-UI. The
+  shadcn CLI is not an app dependency; its base CSS is vendored as `src/app/shadcn-base.css`. `npm audit` shows only
+  the two existing PostCSS advisories inside Next 15.
+- **App shell:**
+  - the sidebar folds to icons, becomes a slide-out menu on phones, and stays dark in both themes;
+  - the top bar has stock search from any page, a Kite status badge (links to Admin), a PAPER badge and the
+    theme switch.
+- **Light and dark:** a full light palette (soft grey page, white cards, indigo) and a dark one (deep navy).
+  - Gain, loss and warning colours are tokens.
+  - The choice is saved per device and applied before the page paints (no flash).
+  - Charts switch with it (`widget.setTheme`).
+  - Every page's hard-coded greys were moved to theme colours.
+- **Dashboard (`/`):**
+  - one card per index (NIFTY 50 first): last stored close, change ▲▼ in points and %, a 30-session trend line;
+  - clicking a card shows that index's last 250 sessions in a large chart, with the change over the period;
+  - System and Data foundation panels below;
+  - everything is labelled "last stored daily close · not live".
+- **Stocks:** search moved to the top bar (one search box); the page follows `?symbol=` so top-bar searches work
+  from any page.
+- **Tests:** `theme.test.ts` (saved choice, system fallback, broken storage), `market.test.ts` (change in paisa and
+  basis points, symmetric rounding, fewer than two closes → nothing, strict page). 89 frontend tests; build OK.
+
+## [Unreleased] — Stock page (DEC-STOCKPAGE), full-width pages, bond actions excluded (2026-11-21)
+
+### Stock page — `/stocks`
+- Search any of the 224 universe members (keyboard: ↑ ↓ Enter Esc); the address becomes `/stocks?symbol=NSE:X`,
+  so a stock can be bookmarked. "Open chart" goes to `/charts?symbol=NSE:X`.
+- Shows, in plain words:
+  - basics: name, tick size, F&O lot size (nearest live futures contract), earlier names;
+  - daily and 1-minute data health, exactly the gate/Admin numbers (`symbol_coverage()`, `completeness(symbol)`);
+  - corporate actions, each with what Kite's measured prices did, plus filters (splits & bonuses, dividends, other);
+  - price steps NSE didn't list (tiny ones hidden behind a toggle);
+  - days with a usable real traded price;
+  - the 1e datasets as "not loaded yet".
+- Backend: `GET /api/data/stock?symbol=` (`app/data/stock.py`), 404 for a stock outside the universe. 7 DB tests
+  (statuses, rename chain with a loop guard, nearest live future, health numbers, index, 404).
+- Frontend: strict parser `src/lib/stock.ts` (unknown status, non-integer paisa or a missing field is an error),
+  `formatRupees` in the one formatter, shared plain-English labels in `src/lib/labels.ts` (Admin uses them too).
+  6 parser/wording tests.
+- Found on the page and fixed before release: dividends showed as "Other" (the SQL built a nested array).
+
+### Full-width pages
+- Home, Admin, Charts and Stocks drop the fixed max-width; content uses the whole screen with side padding.
+
+### Bonds and preference shares no longer count as share actions (`load_actions`)
+- NSE lists a company's NCDs, bonds and preference shares under the same symbol in other series (MB, YB, N5, O1, P1…).
+  The analysis read them as share actions: 750 such entries across 21 companies (e.g. SHRIRAMFIN: 327 interest
+  payments). They forced extra window splits and could label a real step "can't check".
+- Now only the share series NSE prices come from (EQ, BE, BZ — `PD_SERIES`) count, in the analysis and on the page.
+  A DB test pins it.
+
 ## [Unreleased] — Decisions taken: DEC-2015, DEC-CORROB, DEC-1E-SOURCES (2026-11-21)
 
 The user took every recommendation in `OPEN_DATA_DECISIONS.md` and `PROPOSAL_1E_SOURCES.md`.

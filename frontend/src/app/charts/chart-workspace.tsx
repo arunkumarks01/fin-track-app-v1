@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type CandlePage, FinTrackFeed, INTERVALS } from "@/lib/charts";
+import { currentTheme, THEME_EVENT, type Theme } from "@/lib/theme";
 
 type Provenance = { source: string; omitted: number; adjustment: string; interval: string };
 type Adjustment = "adjusted" | "raw";
@@ -67,7 +68,7 @@ export function ChartWorkspace() {
         const widget = createWidget(host.current, {
           feed,
           intervals: INTERVALS,
-          theme: "dark",
+          theme: currentTheme(),
           persist: "fintrack-v2-charts",
           indicators: true,
         });
@@ -83,13 +84,22 @@ export function ChartWorkspace() {
           ),
         ];
         await widget.ready;
-        if (!widget.symbol()) {
+        // a link from the Stocks page (?symbol=NSE:XXX) opens that stock, keeping the interval
+        const linked = new URLSearchParams(window.location.search).get("symbol");
+        const [linkedExchange, linkedSymbol] = linked?.includes(":") ? linked.split(":", 2) : [];
+        if (linkedExchange && linkedSymbol) {
+          widget.setSymbol(linkedSymbol, linkedExchange);
+          if (!widget.interval()) widget.setInterval("D");
+        } else if (!widget.symbol()) {
           // first visit: nothing restored from the saved layout
           widget.setSymbol("NIFTY 50", "NSE");
           widget.setInterval("D");
         }
         refresh();
+        const onTheme = (e: Event) => widget.setTheme((e as CustomEvent<Theme>).detail);
+        window.addEventListener(THEME_EVENT, onTheme);
         destroy = () => {
+          window.removeEventListener(THEME_EVENT, onTheme);
           offs.forEach((off) => off());
           widgetRef.current = null;
           widget.destroy();
@@ -115,7 +125,7 @@ export function ChartWorkspace() {
         <div
           role="radiogroup"
           aria-label="Prices"
-          className="flex overflow-hidden rounded border border-neutral-700"
+          className="flex overflow-hidden rounded border border-border"
         >
           {(["adjusted", "raw"] as const).map((a) => (
             <button
@@ -125,26 +135,26 @@ export function ChartWorkspace() {
               aria-checked={adjustment === a}
               disabled={a === "raw" && !rawOffered}
               onClick={() => choose(a)}
-              className={`px-3 py-1 ${adjustment === a ? "bg-neutral-700 text-white" : "text-neutral-300 hover:bg-neutral-800"} disabled:cursor-not-allowed disabled:text-neutral-600`}
+              className={`px-3 py-1 ${adjustment === a ? "bg-accent text-foreground" : "text-foreground/80 hover:bg-muted"} disabled:cursor-not-allowed disabled:text-muted-foreground/60`}
             >
               {a === "adjusted" ? "Adjusted" : "Raw (as traded)"}
             </button>
           ))}
         </div>
         {!rawOffered && (
-          <span className="text-xs text-neutral-500">
+          <span className="text-xs text-muted-foreground">
             Raw isn&apos;t available here: indices have one series, and 3m–1h are derived from the
             adjusted 1-minute bars.
           </span>
         )}
       </div>
       <div ref={host} className="h-[calc(100vh-13rem)] min-h-[420px] w-full" />
-      <p className="text-xs text-neutral-400" aria-live="polite">
+      <p className="text-xs text-muted-foreground" aria-live="polite">
         {provenance ? (
           <>
             Source: {provenance.source} · {provenance.interval} · {provenance.adjustment}
             {provenance.omitted > 0 && (
-              <span className="text-amber-300">
+              <span className="text-warn">
                 {" "}
                 · {provenance.omitted} one-minute bars omitted (no usable as-traded measurement for
                 their day — never guessed)
@@ -154,7 +164,7 @@ export function ChartWorkspace() {
         ) : (
           "Loading…"
         )}
-        {error && <span className="text-red-400"> · {error}</span>}
+        {error && <span className="text-loss"> · {error}</span>}
       </p>
     </div>
   );

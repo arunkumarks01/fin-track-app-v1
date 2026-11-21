@@ -186,10 +186,19 @@ LEFT JOIN (SELECT symbol, listing,
            FROM unnest($1::text[], $2::date[]) AS t(symbol, listing)) l ON l.symbol = u.symbol
 LEFT JOIN qc ON qc.symbol = u.symbol
 LEFT JOIN fc ON fc.symbol = u.symbol
-WHERE u.active
+WHERE u.active AND ($3::text IS NULL OR u.symbol = $3)
 GROUP BY u.symbol, u.kind
 ORDER BY u.kind DESC, u.symbol
 """
+
+
+async def symbol_coverage(
+    conn: Any, settings: Settings, now: datetime, symbol: str
+) -> SymbolCoverage | None:
+    """One symbol's row of the daily gate report — the same numbers, computed the same way."""
+    as_of = last_final_daily_session(now, settings.daily_bar_final_next_day_ist)
+    rows = await _symbol_rows(conn, settings, as_of, symbol)
+    return rows[0] if rows else None
 
 
 async def coverage_report(conn: Any, settings: Settings, now: datetime) -> CoverageReport:
@@ -205,6 +214,14 @@ async def coverage_report(conn: Any, settings: Settings, now: datetime) -> Cover
             "max_weekday_gap_pct": settings.coverage_max_weekday_gap_pct,
         },
     )
+    report.symbols.extend(await _symbol_rows(conn, settings, as_of, None))
+    return _gate(report, settings)
+
+
+async def _symbol_rows(
+    conn: Any, settings: Settings, as_of: date, only: str | None
+) -> list[SymbolCoverage]:
+    out: list[SymbolCoverage] = []
     gaps = await no_trading_gaps(conn, settings)
     listings: dict[str, Any] = {}
     for g in gaps:
@@ -219,7 +236,7 @@ async def coverage_report(conn: Any, settings: Settings, now: datetime) -> Cover
             )
     async with conn.transaction():
         await _without_jit(conn)
-        rows = await conn.fetch(_SQL, list(listings), list(listings.values()))
+        rows = await conn.fetch(_SQL, list(listings), list(listings.values()), only)
     for r in rows:
         oldest = r["oldest"] and trading_date_of(r["oldest"], MARKET_TZ)
         newest = r["newest"] and trading_date_of(r["newest"], MARKET_TZ)
@@ -234,7 +251,7 @@ async def coverage_report(conn: Any, settings: Settings, now: datetime) -> Cover
             reason = f"{r['bars']} clean bars < {settings.coverage_min_clean_daily_bars}"
         elif gap_pct is not None and gap_pct > settings.coverage_max_weekday_gap_pct:
             reason = f"{gap_pct}% of weekdays missing > {settings.coverage_max_weekday_gap_pct}%"
-        report.symbols.append(
+        out.append(
             SymbolCoverage(
                 symbol=r["symbol"],
                 kind=r["kind"],
@@ -255,7 +272,10 @@ async def coverage_report(conn: Any, settings: Settings, now: datetime) -> Cover
                 suspended_weekdays=suspended.get(r["symbol"], 0),
             )
         )
+    return out
 
+
+def _gate(report: CoverageReport, settings: Settings) -> CoverageReport:
     symbols = report.symbols
     if not symbols:
         report.checks["universe_not_empty"] = False

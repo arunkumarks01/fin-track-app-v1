@@ -12,7 +12,10 @@ export const metadata: Metadata = { title: "Admin · FinTrack v2" };
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section aria-label={title} className="rounded-lg border border-neutral-800 p-4">
+    <section
+      aria-label={title}
+      className="rounded-xl border bg-card p-4 text-card-foreground shadow-xs"
+    >
       <h2 className="mb-3 text-base font-medium">{title}</h2>
       {children}
     </section>
@@ -22,10 +25,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 /** UX_DESIGN "Admin/Health", Phase-1 subset: read-only monitoring of the data pipeline. */
 export default function AdminPage() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-4 py-8">
+    <div className="flex w-full flex-col gap-6 p-4 sm:p-6">
       <div>
         <h1 className="text-2xl font-semibold">Admin · Health</h1>
-        <p className="text-neutral-400">
+        <p className="text-muted-foreground">
           Read-only. Jobs are started from the API with the bearer token, never from the browser.
         </p>
       </div>
@@ -54,6 +57,6 @@ export default function AdminPage() {
       <Section title="Data quality">
         <QualityPanel />
       </Section>
-    </main>
+    </div>
   );
 }
