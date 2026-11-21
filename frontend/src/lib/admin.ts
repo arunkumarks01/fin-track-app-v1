@@ -34,6 +34,11 @@ function bool(v: unknown, what: string): boolean {
   return typeof v === "boolean" ? v : fail(what);
 }
 
+function isoDate(v: unknown, what: string): string {
+  const d = str(v, what);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : fail(what);
+}
+
 function optStr(v: unknown, what: string): string | null {
   return v === null || v === undefined ? null : str(v, what);
 }
@@ -200,12 +205,16 @@ export type IntradaySymbol = {
   short: number;
   excess: number;
   missingSessions: number;
+  /** NSE didn't trade the equity (suspension): reported, not a data gap */
+  notTradedSessions: number;
   review: number;
 };
 
 export type IntradayCoverage = {
   generatedAt: string;
   dbSizeGb: number;
+  /** DEC-2015: intraday analysis starts here by default; older 1m is stored, opt-in only */
+  analysisStart: string;
   symbols: number;
   minuteBars: number;
   sessions: number;
@@ -215,6 +224,8 @@ export type IntradayCoverage = {
   unknown: number;
   marketShort: number;
   missingSessions: number;
+  /** NSE didn't trade the equity (suspension): reported, not a data gap */
+  notTradedSessions: number;
   missingMinutes: number;
   oldest: string | null;
   newest: string | null;
@@ -235,12 +246,14 @@ export function parseIntradayCoverage(body: unknown, worstN = 8): IntradayCovera
       short: num(r.short, "short"),
       excess: num(r.excess, "excess"),
       missingSessions: num(r.missing_sessions, "missing_sessions"),
+      notTradedSessions: num(r.not_traded_sessions, "not_traded_sessions"),
       review: num(r.review, "review"),
     };
   });
   return {
     generatedAt: str(b.generated_at, "generated_at"),
     dbSizeGb: num(b.db_size_gb, "db_size_gb"),
+    analysisStart: isoDate(b.analysis_start, "analysis_start"),
     symbols: num(s.symbols, "symbols"),
     minuteBars: num(s.minute_bars, "minute_bars"),
     sessions: num(s.sessions, "sessions"),
@@ -250,6 +263,7 @@ export function parseIntradayCoverage(body: unknown, worstN = 8): IntradayCovera
     unknown: num(s.unknown_sessions, "unknown_sessions"),
     marketShort: num(s.market_short_sessions, "market_short_sessions"),
     missingSessions: num(s.missing_sessions, "missing_sessions"),
+    notTradedSessions: num(s.not_traded_sessions, "not_traded_sessions"),
     missingMinutes: num(s.missing_minutes, "missing_minutes"),
     oldest: optStr(s.oldest, "oldest"),
     newest: optStr(s.newest, "newest"),

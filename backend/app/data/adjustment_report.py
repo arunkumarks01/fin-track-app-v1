@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from app.core.config import Settings
@@ -43,11 +44,27 @@ async def adjustments_summary(conn: Any, settings: Settings, now: datetime) -> d
            WHERE u.active AND (c.checked_on IS NULL OR c.checked_on < $1)""",
         last_final,
     )
+    # exact decimal: a float bound to a numeric parameter lands a hair above 0.0025 and would drop
+    # steps sized exactly at the threshold into the noise count
+    min_step = Decimal(str(settings.adj_review_min_step))
+    # Material steps only: unexplained steps below ADJ_REVIEW_MIN_STEP are refit noise (counted,
+    # still on each symbol's page). A step of unknown size is always listed (fail closed).
+    # Every 'corroborated' step is listed with its evidence (DEC-CORROB: never silent).
     review = await conn.fetch(
-        """SELECT symbol, effective_date, classification, detail FROM app.adjustment_events
-           WHERE classification IN ('suspect', 'official_mismatch', 'unexplained_small')
+        """SELECT symbol, effective_date, classification, detail, magnitude
+           FROM app.adjustment_events
+           WHERE classification IN ('suspect', 'official_mismatch', 'corroborated')
+              OR (classification = 'unexplained_small'
+                  AND (magnitude IS NULL OR magnitude >= $1))
            ORDER BY classification = 'suspect' DESC, classification = 'official_mismatch' DESC,
-                    effective_date DESC LIMIT 100"""
+                    classification = 'corroborated' DESC,
+                    magnitude DESC NULLS LAST, effective_date DESC LIMIT 100""",
+        min_step,
+    )
+    noise = await conn.fetchval(
+        """SELECT count(*) FROM app.adjustment_events
+           WHERE classification = 'unexplained_small' AND magnitude < $1""",
+        min_step,
     )
     return {
         "generated_at": now.isoformat(),
@@ -70,10 +87,12 @@ async def adjustments_summary(conn: Any, settings: Settings, now: datetime) -> d
                 "symbol": r["symbol"],
                 "date": r["effective_date"].isoformat(),
                 "class": r["classification"],
+                "magnitude": _f(r["magnitude"]),
                 "detail": r["detail"],
             }
             for r in review
         ],
+        "review_noise": {"count": noise, "below": settings.adj_review_min_step},
     }
 
 

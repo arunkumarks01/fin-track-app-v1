@@ -280,6 +280,51 @@ async def test_missing_sessions_counts_only_gaps_inside_each_symbols_span(
     assert by["NSE:NIFTY 50"].missing_sessions == 0
 
 
+async def test_sessions_nse_says_were_not_traded_are_not_missing_data(
+    pool: Any, db: Any, test_dsn: str
+) -> None:
+    """A suspension (FORCEMOT 2023-10-26 → 2024-02-13) is not a data gap: an equity session with
+    no 1m bars is 'not traded' only when NSE's archive for that day loaded and has no row for
+    the symbol. Otherwise — NSE traded it, the archive can't vouch, or it's an index — it stays
+    missing."""
+    from app.data.intraday_coverage import completeness
+
+    src = full_source()
+    suspended = date(2026, 10, 14)  # archive ok, no NSE row → not traded
+    traded = date(2026, 10, 15)  # archive ok, NSE row exists → our data is missing
+    unvouched = date(2026, 10, 16)  # archive day missing → can't vouch → missing
+    holes = {suspended, traded, unvouched}
+    src.series[101] = [
+        r
+        for d in weekdays(FLOOR, END)
+        if d not in holes
+        for r in session(d, minutes=MINUTES, seed=101)
+    ]
+    src.series[256265] = [  # the index loses the 'suspended' day too: never excused
+        r
+        for d in weekdays(FLOOR, END)
+        if d != suspended
+        for r in session(d, minutes=MINUTES, seed=7)
+    ]
+    await run_intraday_backfill(pool, src, settings_for(test_dsn), FrozenClock(EVENING))
+    for d, status in ((suspended, "ok"), (traded, "ok"), (unvouched, "missing")):
+        await db.execute(
+            "INSERT INTO app.nse_archive_files (trade_date, status, fetched_at)"
+            " VALUES ($1, $2, now())",
+            d,
+            status,
+        )
+    await db.execute(
+        """INSERT INTO app.nse_bhav (symbol, trade_date, prev_close, open, high, low, close, volume)
+           VALUES ('NSE:AAA', $1, 100, 100, 101, 99, 100, 10)""",
+        traded,
+    )
+    by = {c.symbol: c for c in await completeness(db)}
+    assert (by["NSE:AAA"].missing_sessions, by["NSE:AAA"].not_traded_sessions) == (2, 1)
+    assert by["NSE:AAA"].review == 2
+    assert (by["NSE:NIFTY 50"].missing_sessions, by["NSE:NIFTY 50"].not_traded_sessions) == (1, 0)
+
+
 async def test_intraday_drift_is_recorded_when_a_whole_session_rescales(
     pool: Any, db: Any, test_dsn: str
 ) -> None:

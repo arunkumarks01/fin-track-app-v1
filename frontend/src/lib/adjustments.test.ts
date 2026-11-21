@@ -20,7 +20,16 @@ const SUMMARY = {
   events_by_class: { explained: 900, attributed: 400, unexplained_small: 25, suspect: 3 },
   drift_events: 0,
   checks_stale: 0,
-  review: [{ symbol: "NSE:AAA", date: "2020-05-13", class: "suspect", detail: "price step x0.8" }],
+  review: [
+    {
+      symbol: "NSE:AAA",
+      date: "2020-05-13",
+      class: "suspect",
+      magnitude: 0.2,
+      detail: "price step x0.8",
+    },
+  ],
+  review_noise: { count: 776, below: 0.0025 },
 };
 
 describe("parseAdjustmentsSummary", () => {
@@ -35,8 +44,15 @@ describe("parseAdjustmentsSummary", () => {
       symbol: "NSE:AAA",
       date: "2020-05-13",
       cls: "suspect",
+      magnitude: 0.2,
       detail: "price step x0.8",
     });
+    expect(s.reviewNoise).toEqual({ count: 776, below: 0.0025 });
+  });
+
+  it("keeps a step of unknown size (null magnitude)", () => {
+    const body = { ...SUMMARY, review: [{ ...SUMMARY.review[0], magnitude: null }] };
+    expect(parseAdjustmentsSummary(body).review[0]?.magnitude).toBeNull();
   });
 
   it.each([
@@ -44,6 +60,8 @@ describe("parseAdjustmentsSummary", () => {
     ["count as string", { ...SUMMARY, events_by_class: { explained: "900" } }],
     ["missing review", { ...SUMMARY, review: undefined }],
     ["missing stale count", { ...SUMMARY, checks_stale: null }],
+    ["missing noise count", { ...SUMMARY, review_noise: undefined }],
+    ["magnitude as string", { ...SUMMARY, review: [{ ...SUMMARY.review[0], magnitude: "0.2" }] }],
   ])("rejects %s", (_name, body) => {
     expect(() => parseAdjustmentsSummary(body)).toThrow(AdjustmentsContractError);
   });

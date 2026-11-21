@@ -32,6 +32,14 @@ export function IntradayPanel() {
         <dd>
           {c.oldest ?? "—"} → {c.newest ?? "—"}
         </dd>
+        <dt className="text-neutral-400">Analysis starts</dt>
+        <dd>
+          {c.analysisStart}{" "}
+          <span className="text-neutral-500">
+            (default for intraday backtests and statistics; older 1m stays stored and chartable,
+            opt-in only, badged &ldquo;feed gaps&rdquo;)
+          </span>
+        </dd>
         <dt className="text-neutral-400">Database size</dt>
         <dd>{c.dbSizeGb.toFixed(2)} GB</dd>
         <dt className="text-neutral-400">Complete sessions</dt>
@@ -42,6 +50,13 @@ export function IntradayPanel() {
         <dt className="text-neutral-400">Short · excess · missing</dt>
         <dd className="text-amber-400">
           {formatInt(c.short)} · {formatInt(c.excess)} · {formatInt(c.missingSessions)}
+        </dd>
+        <dt className="text-neutral-400">Not traded (NSE)</dt>
+        <dd>
+          {formatInt(c.notTradedSessions)}{" "}
+          <span className="text-neutral-500">
+            (suspensions per NSE&apos;s archive — not data gaps)
+          </span>
         </dd>
         <dt className="text-neutral-400">Market-wide short days</dt>
         <dd>

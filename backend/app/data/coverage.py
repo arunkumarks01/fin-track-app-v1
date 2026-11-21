@@ -132,8 +132,16 @@ ORDER BY b.symbol, b.d
 """
 
 
+async def _without_jit(conn: Any) -> None:
+    """These report queries span every daily chunk; Postgres' JIT spent ~1.8 s compiling ~600
+    functions for a sub-second query. SET LOCAL ends with the caller's transaction."""
+    await conn.execute("SET LOCAL jit = off")
+
+
 async def no_trading_gaps(conn: Any, settings: Settings) -> list[Any]:
-    return list(await conn.fetch(_NO_TRADING_GAPS_SQL, settings.coverage_listing_gap_sessions))
+    async with conn.transaction():
+        await _without_jit(conn)
+        return list(await conn.fetch(_NO_TRADING_GAPS_SQL, settings.coverage_listing_gap_sessions))
 
 
 async def listing_dates(conn: Any, settings: Settings) -> dict[str, Any]:
@@ -145,7 +153,22 @@ async def listing_dates(conn: Any, settings: Settings) -> dict[str, Any]:
     return out
 
 
+# Quarantine/flag counts are aggregated ONCE (a per-symbol correlated subquery re-checked every
+# quarantined row per symbol: ~2.5 s of the report).
 _SQL = """
+WITH qc AS (
+    SELECT q.symbol, count(*) AS total,
+           count(*) FILTER (WHERE q.ts IS NULL OR c2.ts IS NULL) AS unresolved
+    FROM app.ohlcv_quarantine q
+    LEFT JOIN app.ohlcv_candles c2
+           ON c2.symbol = q.symbol AND c2.timeframe = '1d'
+          AND c2.ts = date_trunc('day', q.ts AT TIME ZONE 'Asia/Kolkata')
+                      AT TIME ZONE 'Asia/Kolkata'
+    WHERE q.timeframe = '1d'
+    GROUP BY q.symbol
+), fc AS (
+    SELECT symbol, count(*) AS flagged FROM app.ohlcv_flags WHERE timeframe = '1d' GROUP BY symbol
+)
 SELECT u.symbol, u.kind,
        count(c.ts) FILTER (WHERE l.listing IS NULL OR c.ts >= l.ts0)    AS bars,
        count(c.ts) FILTER (WHERE c.ts < l.ts0)                         AS pre_listing,
@@ -153,22 +176,16 @@ SELECT u.symbol, u.kind,
        min(c.ts) FILTER (WHERE l.listing IS NULL OR c.ts >= l.ts0)      AS oldest,
        max(c.ts)                                                     AS newest,
        count(c.ts) - count(DISTINCT (c.ts AT TIME ZONE 'Asia/Kolkata')::date) AS dupes,
-       (SELECT count(*) FROM app.ohlcv_quarantine q
-         WHERE q.symbol = u.symbol AND q.timeframe = '1d'
-           AND (q.ts IS NULL OR NOT EXISTS (
-                SELECT 1 FROM app.ohlcv_candles c2
-                WHERE c2.symbol = q.symbol AND c2.timeframe = '1d'
-                  AND c2.ts = date_trunc('day', q.ts AT TIME ZONE 'Asia/Kolkata')
-                              AT TIME ZONE 'Asia/Kolkata')))           AS quarantined,
-       (SELECT count(*) FROM app.ohlcv_quarantine q
-         WHERE q.symbol = u.symbol AND q.timeframe = '1d')            AS quarantined_total,
-       (SELECT count(*) FROM app.ohlcv_flags f
-         WHERE f.symbol = u.symbol AND f.timeframe = '1d')            AS flagged
+       coalesce(max(qc.unresolved), 0)                              AS quarantined,
+       coalesce(max(qc.total), 0)                                   AS quarantined_total,
+       coalesce(max(fc.flagged), 0)                                 AS flagged
 FROM app.universe u
 LEFT JOIN app.ohlcv_candles c ON c.symbol = u.symbol AND c.timeframe = '1d'
 LEFT JOIN (SELECT symbol, listing,
                   (listing::timestamp AT TIME ZONE 'Asia/Kolkata') AS ts0
            FROM unnest($1::text[], $2::date[]) AS t(symbol, listing)) l ON l.symbol = u.symbol
+LEFT JOIN qc ON qc.symbol = u.symbol
+LEFT JOIN fc ON fc.symbol = u.symbol
 WHERE u.active
 GROUP BY u.symbol, u.kind
 ORDER BY u.kind DESC, u.symbol
@@ -200,7 +217,10 @@ async def coverage_report(conn: Any, settings: Settings, now: datetime) -> Cover
             suspended[g["symbol"]] = suspended.get(g["symbol"], 0) + weekdays_between(
                 g["prev"], g["d"]
             )
-    for r in await conn.fetch(_SQL, list(listings), list(listings.values())):
+    async with conn.transaction():
+        await _without_jit(conn)
+        rows = await conn.fetch(_SQL, list(listings), list(listings.values()))
+    for r in rows:
         oldest = r["oldest"] and trading_date_of(r["oldest"], MARKET_TZ)
         newest = r["newest"] and trading_date_of(r["newest"], MARKET_TZ)
         gap_pct = stale = None

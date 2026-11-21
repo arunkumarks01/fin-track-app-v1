@@ -73,3 +73,22 @@ def test_settings_are_immutable(make_settings: SettingsFactory) -> None:
     s = make_settings()
     with pytest.raises(ValidationError):
         s.paper_mode = False  # type: ignore[misc,assignment]
+
+
+def test_dec_2015_and_corroboration_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    from datetime import date
+
+    monkeypatch.setenv("API_AUTH_TOKEN", "e" * 32)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://a:b@h:1/db")
+    s = Settings(_env_file=None)
+    assert s.intraday_analysis_start == date(2016, 1, 1)  # DEC-2015
+    assert s.adj_corroborate_max_term == 10  # DEC-CORROB
+    monkeypatch.setenv("INTRADAY_ANALYSIS_START", "2015-01-09")  # an explicit opt-in
+    assert Settings(_env_file=None).intraday_analysis_start == date(2015, 1, 9)
+
+
+def test_corroboration_term_bounds(make_settings: SettingsFactory) -> None:
+    with pytest.raises(ValidationError):
+        make_settings(adj_corroborate_max_term=1)  # p/q with p, q <= 1 is only 1/1
+    with pytest.raises(ValidationError):
+        make_settings(intraday_analysis_start="2016-13-01")

@@ -145,6 +145,10 @@ class Settings(BaseSettings):
     intraday_norm_step_sessions: int = Field(default=10, ge=2)
     intraday_market_short_share: float = Field(default=0.5, gt=0, le=1)
     intraday_market_min_instruments: int = Field(default=3, ge=1)
+    # DEC-2015: intraday analysis (backtests, statistics; Phase 2+) starts here by default. Older
+    # 1m (2015: Kite feed holes, ~14-28x the market-wide short days of later years) stays stored
+    # and chartable; using it is an explicit opt-in that carries a "2015: feed gaps" badge.
+    intraday_analysis_start: date = date(2016, 1, 1)
 
     # --- NSE archive + measured adjustments (Phase 1c, DEC-B revised) ---
     # The static archive serves an honest client; www.nseindia.com 403s non-browsers and we
@@ -177,6 +181,11 @@ class Settings(BaseSettings):
     adj_match: float = Field(default=0.005, gt=0, lt=0.1)
     # unexplained jumps up to this fraction are badged; larger ones make both windows suspect
     adj_unexplained_small: float = Field(default=0.03, gt=0, lt=0.5)
+    # DEC-CORROB: an unlisted step is 'corroborated' only at a clean ratio p/q with p, q ≤ this
+    adj_corroborate_max_term: int = Field(default=10, ge=2, le=50)
+    # the Admin review list shows unexplained steps of at least this size (fraction); smaller
+    # ones are refit noise — counted, still on each symbol's page (measured: median 0.03%)
+    adj_review_min_step: float = Field(default=0.0025, gt=0, lt=0.5)
 
     # --- validation gate ---
     validation_large_gap_pct: int = Field(default=20, ge=1)  # open vs prev close

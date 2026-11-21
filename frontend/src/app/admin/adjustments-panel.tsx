@@ -5,12 +5,37 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchAdjustmentsSummary, fetchRepairs } from "@/lib/adjustments";
 import { formatInt } from "@/lib/format";
 
-const CLASS_TEXT: Record<string, { label: string; className: string }> = {
-  explained: { label: "explained by an NSE action", className: "text-emerald-400" },
-  attributed: { label: "at an action we can't check", className: "text-neutral-300" },
-  unexplained_small: { label: "unexplained, small (badged)", className: "text-amber-400" },
-  suspect: { label: "unexplained, large (suspect)", className: "text-red-400" },
-  official_mismatch: { label: "newest bars ≠ official", className: "text-red-400" },
+const CLASS_TEXT: Record<string, { label: string; short: string; className: string }> = {
+  explained: {
+    label: "matches an NSE action",
+    short: "matches NSE",
+    className: "text-emerald-400",
+  },
+  attributed: {
+    label: "at an NSE action we can't check",
+    short: "can't check",
+    className: "text-neutral-300",
+  },
+  unexplained_small: {
+    label: "no NSE action, small (kept, marked)",
+    short: "small, no reason",
+    className: "text-amber-400",
+  },
+  suspect: {
+    label: "no NSE action, large (not used)",
+    short: "suspect",
+    className: "text-red-400",
+  },
+  corroborated: {
+    label: "not in NSE's list, but NSE prices confirm it (kept, listed below)",
+    short: "confirmed by NSE prices",
+    className: "text-sky-400",
+  },
+  official_mismatch: {
+    label: "latest bars differ from NSE official",
+    short: "differs from official",
+    className: "text-red-400",
+  },
 };
 
 const QUALITY_TEXT: Record<string, string> = {
@@ -125,16 +150,28 @@ export function AdjustmentsPanel() {
 
       <RepairsView q={repairs} />
 
-      {s.review.length > 0 && (
+      {(s.review.length > 0 || s.reviewNoise.count > 0) && (
         <div className="overflow-x-auto">
           <h3 className="mb-2 font-medium">To review</h3>
+          {s.reviewNoise.count > 0 && (
+            <p className="mb-2 text-neutral-500">
+              {formatInt(s.reviewNoise.count)} smaller unexplained steps (under{" "}
+              {(s.reviewNoise.below * 100).toFixed(2)}%) are refit noise between windows: counted
+              here, kept and badged, and listed on each symbol&apos;s page.
+            </p>
+          )}
           <table className="w-full min-w-[36rem] text-left">
             <tbody>
               {s.review.slice(0, 15).map((r) => (
                 <tr key={`${r.symbol}-${r.date}`} className="border-t border-neutral-800">
                   <td className="py-1">{r.symbol}</td>
                   <td className="py-1">{r.date}</td>
-                  <td className={`py-1 ${CLASS_TEXT[r.cls]?.className ?? ""}`}>{r.cls}</td>
+                  <td className={`py-1 ${CLASS_TEXT[r.cls]?.className ?? ""}`}>
+                    {CLASS_TEXT[r.cls]?.short ?? r.cls}
+                  </td>
+                  <td className="py-1 text-right tabular-nums">
+                    {r.magnitude === null ? "—" : `${(r.magnitude * 100).toFixed(2)}%`}
+                  </td>
                   <td className="py-1 text-neutral-400">{r.detail}</td>
                 </tr>
               ))}

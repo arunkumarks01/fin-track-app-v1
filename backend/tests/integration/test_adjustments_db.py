@@ -539,7 +539,8 @@ async def test_session_status_per_instrument_with_auction_step_and_outage(
         )
     s = build_settings(database_url=test_dsn)
     assert await refresh_session_status(db, s, NOW) == 6 * 60
-    report = await intraday_report(db, NOW)
+    report = await intraday_report(db, NOW, s.intraday_analysis_start)
+    assert report["analysis_start"] == "2016-01-01"  # DEC-2015 default, surfaced
     by = {r["symbol"]: r for r in report["symbols"]}
     assert by["NSE:E0"]["short"] == 1  # the one real short session
     assert by["NSE:E0"]["market_short"] == 1  # the outage: reported, not flagged
@@ -671,3 +672,43 @@ async def test_analysis_reparses_stored_purposes_with_the_current_parser(
         1000,
         500,
     )
+
+
+async def test_review_lists_material_steps_and_counts_refit_noise(db: Any) -> None:
+    """Sub-threshold unexplained steps are refit noise: counted, not listed. Suspects, official
+    mismatches and any step whose size is unknown are always listed (fail closed)."""
+    from app.data.adjustment_report import adjustments_summary
+
+    await migrate(db)
+    rows = [
+        ("NSE:A", date(2026, 1, 5), "unexplained_small", 0.0001),  # noise
+        ("NSE:A", date(2026, 2, 5), "unexplained_small", 0.0003),  # noise
+        ("NSE:B", date(2026, 3, 5), "unexplained_small", 0.012),  # material
+        ("NSE:C", date(2026, 4, 5), "unexplained_small", None),  # size unknown → listed
+        ("NSE:F", date(2026, 6, 5), "unexplained_small", Decimal("0.0025")),  # exact, as stored
+        ("NSE:D", date(2025, 1, 10), "suspect", 0.75),
+        ("NSE:E", date(2026, 5, 5), "explained", None),
+        ("NSE:G", date(2023, 3, 2), "corroborated", None),  # DEC-CORROB: always listed
+    ]
+    await db.executemany(
+        """INSERT INTO app.adjustment_events
+           (symbol, effective_date, ratio, g_ratio, action_ids, classification, detail, magnitude)
+           VALUES ($1, $2, 1, NULL, '{}', $3, 'x', $4)""",
+        rows,
+    )
+    s = await adjustments_summary(db, build_settings(adj_review_min_step=0.0025), NOW)
+    assert [(r["symbol"], r["class"]) for r in s["review"]] == [
+        ("NSE:D", "suspect"),
+        ("NSE:G", "corroborated"),
+        ("NSE:B", "unexplained_small"),
+        ("NSE:F", "unexplained_small"),
+        ("NSE:C", "unexplained_small"),
+    ]
+    assert s["review"][2]["magnitude"] == pytest.approx(0.012)
+    assert s["review_noise"] == {"count": 2, "below": 0.0025}
+    with pytest.raises(asyncpg.CheckViolationError):  # the class list is closed (0009)
+        await db.execute(
+            """INSERT INTO app.adjustment_events
+               (symbol, effective_date, ratio, action_ids, classification, detail)
+               VALUES ('NSE:H', '2026-01-01', 1, '{}', 'probably_fine', 'x')"""
+        )

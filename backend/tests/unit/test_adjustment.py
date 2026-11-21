@@ -10,7 +10,7 @@ from __future__ import annotations
 import random
 import statistics
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
 import pytest
@@ -208,10 +208,97 @@ def test_small_unexplained_step_is_badged_and_kept() -> None:
     assert {r.quality for r in a.days} == {"measured"}  # kept, badged via the event
 
 
+def test_unexplained_steps_carry_their_measured_size_explained_ones_none() -> None:
+    small = analyse(build(120, [Step(EX, 0.99)]), [], TOL).events[0]
+    assert small.magnitude == pytest.approx(0.01, abs=0.002)  # the 1% step, as classified
+    split = analyse(
+        build(120, [Step(EX, 0.5)]),
+        [act(EX, "FV SPLIT RS 10 TO RS 5", kinds=["split"], split_from=1000, split_to=500)],
+        TOL,
+    ).events[0]
+    assert (split.classification, split.magnitude) == ("explained", None)
+
+
 def test_large_unexplained_step_makes_both_windows_suspect() -> None:
     a = analyse(build(120, [Step(EX, 0.8)]), [], TOL)
     assert [e.classification for e in a.events] == ["suspect"]
     assert {r.quality for r in a.days} == {"suspect"}  # never derive as-traded from it
+
+
+def unlisted_step(r: float, *, gap_before: bool = False) -> list[DayObs]:
+    """A real split/bonus NSE's action file never listed: NSE's AS-TRADED prices before EX are
+    1/r times higher (the stock really traded there), Kite's adjusted series is continuous, and
+    the step day's official prev_close is the previous official close (as the bhavcopy gives)."""
+    days = build(120, nse_missing=[59] if gap_before else ())
+    out: list[DayObs] = []
+    for o in days:
+        n = o.nse
+        if n is not None and o.d < EX:
+            k = 1 / r
+            n = Nse(
+                round(n.open * k),
+                round(n.high * k),
+                round(n.low * k),
+                round(n.close * k),
+                round(n.volume * r),
+                n.prev_close,
+            )
+        out.append(replace(o, nse=n))
+    i = next(i for i, o in enumerate(out) if o.d == EX)
+    # with a gap, prev_close still equals the last OFFICIAL close we have, so only the gap check
+    # (one-session boundary) can reject it
+    prev, cur = out[i - (2 if gap_before else 1)].nse, out[i].nse
+    assert cur is not None
+    assert prev is not None
+    out[i] = replace(out[i], nse=replace(cur, prev_close=prev.close))
+    return out
+
+
+@pytest.mark.parametrize(("r", "label"), [(1 / 4, "x1/4"), (1 / 5, "x1/5"), (1 / 2, "x1/2")])
+def test_unlisted_split_or_bonus_proven_by_nse_prices_is_corroborated(r: float, label: str) -> None:
+    a = analyse(unlisted_step(r), [], TOL)
+    [e] = a.events
+    assert (e.classification, e.magnitude, e.effective_date) == ("corroborated", None, EX)
+    assert label in e.detail  # the evidence is carried for the review list
+    assert "without the step" in e.detail
+    assert {q.quality for q in a.days} == {"measured"}  # as-traded derivable on both sides
+
+
+def test_unlisted_step_nse_prices_dont_show_stays_suspect() -> None:
+    # Kite steps x1/4 but NSE's own prices are continuous: the raw return is inside the band,
+    # so nothing corroborates a split — condition (2)
+    days = build(120, [Step(EX, 0.25)])
+    i = next(i for i, o in enumerate(days) if o.d == EX)
+    prev, cur = days[i - 1].nse, days[i].nse
+    assert prev is not None
+    assert cur is not None
+    days[i] = replace(days[i], nse=replace(cur, prev_close=prev.close))  # (3) holds; only (2) fails
+    a = analyse(days, [], TOL)
+    assert [e.classification for e in a.events] == ["suspect"]
+
+
+def test_unlisted_step_at_an_unclean_ratio_stays_suspect() -> None:
+    a = analyse(unlisted_step(0.2731), [], TOL)  # no p/q with p, q <= 10 — condition (1)
+    assert [e.classification for e in a.events] == ["suspect"]
+    assert {q.quality for q in a.days} == {"suspect"}
+
+
+def test_clean_ratio_beyond_the_max_term_stays_suspect() -> None:
+    a = analyse(unlisted_step(1 / 11), [], TOL)  # 1:11 is clean but outside p, q <= 10
+    assert [e.classification for e in a.events] == ["suspect"]
+
+
+def test_unlisted_step_across_an_unmeasured_day_stays_suspect() -> None:
+    # NSE has no row the day before: the boundary isn't one session — condition (3)
+    a = analyse(unlisted_step(1 / 4, gap_before=True), [], TOL)
+    assert [e.classification for e in a.events] == ["suspect"]
+
+
+def test_listed_action_that_disagrees_is_never_corroborated() -> None:
+    # NSE lists a 1:10 split but the measured step is x1/4: a listed-but-wrong action stays suspect
+    acts = [act(EX, "FV SPLT FRM RS 10 TO RE 1", kinds=["split"], split_from=1000, split_to=100)]
+    a = analyse(unlisted_step(1 / 4), acts, TOL)
+    assert [e.classification for e in a.events] == ["suspect"]
 
 
 def test_action_whose_ratio_disagrees_is_not_explained() -> None:

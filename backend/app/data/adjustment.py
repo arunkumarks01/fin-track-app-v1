@@ -23,6 +23,14 @@ Every remaining step is attributed to NSE actions:
   attributed         an action is there but its effect can't be checked (no amount, rights…)
   unexplained_small  no matching action, step ≤ ADJ_UNEXPLAINED_SMALL — badged, data kept
   suspect            no matching action, larger step — both windows become 'suspect'
+  corroborated       NO NSE action, but NSE's own prices prove a clean split/bonus (DEC-CORROB):
+                     (1) the older line is the newer one times a clean ratio p/q (p, q ≤
+                     ADJ_CORROBORATE_MAX_TERM) within ADJ_MATCH, and the 1m grain doesn't step;
+                     (2) official close / (previous official close * p/q) - 1 lies inside
+                     the widest equity price band while the raw return lies outside it;
+                     (3) the boundary is one session: no day between the windows, and the step
+                     day's official prev_close is the older window's last official close.
+                     Data kept as measured; every case is listed on the Admin review list.
   official_mismatch  the newest window isn't the identity map (Kite's newest bars ≠ official)
 """
 
@@ -56,6 +64,7 @@ class Tol:
     match: float
     unexplained_small: float
     min_window_days: int = 5
+    corroborate_max_term: int = 10
 
     @classmethod
     def from_settings(cls, s: Settings) -> Tol:
@@ -66,6 +75,7 @@ class Tol:
             s.adj_match,
             s.adj_unexplained_small,
             s.adj_min_window_days,
+            s.adj_corroborate_max_term,
         )
 
 
@@ -138,6 +148,9 @@ class Event:
     action_ids: tuple[int, ...]
     classification: str
     detail: str
+    # measured size of an UNEXPLAINED step (fraction): how far the best explanation (or none)
+    # misses; None for explained/attributed/official_mismatch. Sizes the review list.
+    magnitude: float | None = None
 
 
 @dataclass
@@ -151,6 +164,8 @@ class Analysis:
 
 
 EPS = 1e-6
+# Exchange fact, not a tunable: the widest daily price band NSE applies to an equity (20%).
+WIDEST_EQUITY_PRICE_BAND = 0.20
 Point = tuple[float, float]  # (NSE price, Kite price), paisa
 
 
@@ -268,20 +283,24 @@ def _expected(actions: Sequence[Action], prev_close: int | None) -> tuple[float,
 
 def _classify(
     r: float, actions: Sequence[Action], prev_close: int | None, tol: Tol, what: str
-) -> tuple[str, str]:
+) -> tuple[str, str, float | None]:
     names = "; ".join(sorted({a.purpose for a in actions})) or "no NSE action"
     if not actions:
         mag = abs(r - 1)
         cls = "unexplained_small" if mag <= tol.unexplained_small else "suspect"
-        return cls, f"{what} step x{r:.6f} with no NSE action ({mag:.2%})"
+        return cls, f"{what} step x{r:.6f} with no NSE action ({mag:.2%})", mag
     exp, checkable, unverifiable = _expected(actions, prev_close)
     if checkable and abs(r / exp - 1) <= tol.match:
-        return "explained", f"{what} step x{r:.6f} matches expected x{exp:.6f} ({names})"
+        return "explained", f"{what} step x{r:.6f} matches expected x{exp:.6f} ({names})", None
     if unverifiable:
-        return "attributed", f"{what} step x{r:.6f} at an action that can't be checked ({names})"
+        return (
+            "attributed",
+            f"{what} step x{r:.6f} at an action that can't be checked ({names})",
+            None,
+        )
     mag = abs(r / exp - 1)
     cls = "unexplained_small" if mag <= tol.unexplained_small else "suspect"
-    return cls, f"{what} step x{r:.6f} vs expected x{exp:.6f} ({names}) — off by {mag:.2%}"
+    return cls, f"{what} step x{r:.6f} vs expected x{exp:.6f} ({names}) — off by {mag:.2%}", mag
 
 
 def _grain(days: Sequence[DayObs], tol: Tol) -> float | None:
@@ -320,6 +339,59 @@ def _action_options(a: Action, prev_close: int | None) -> list[tuple[str, float,
     return opts
 
 
+def _line_gap(fa: Fit, fb: Fit, p_lo: float, p_hi: float, r: float, s: float) -> float:
+    """Worst relative gap, over the older window's price range, between its measured line and
+    the newer line mapped back through T(P) = r·P - s."""
+    worst = 0.0
+    for p in (p_lo, p_hi):
+        meas = fa.a * p + fa.b
+        pred = fb.a * (r * p - s) + fb.b
+        worst = max(worst, abs(pred - meas) / meas if meas > 0 else float("inf"))
+    return worst
+
+
+def _clean_ratios(max_term: int) -> list[tuple[int, int]]:
+    """(p, q) with p/q a split/bonus/consolidation ratio in lowest terms, p ≠ q."""
+    return [
+        (p, q)
+        for p in range(1, max_term + 1)
+        for q in range(1, max_term + 1)
+        if p != q and math.gcd(p, q) == 1
+    ]
+
+
+def _corroborate(
+    wa: _Seg, wb: _Seg, p_lo: float, p_hi: float, gap_days: bool, tol: Tol
+) -> str | None:
+    """Evidence that an UNLISTED step is a real split/bonus, from NSE's own prices — or None.
+    All three DEC-CORROB conditions must hold; anything missing fails closed (stays suspect)."""
+    fa, fb = wa.fit, wb.fit
+    last_a, first_b = wa.members[-1].nse, wb.members[0].nse
+    if fa is None or fb is None or last_a is None or first_b is None or gap_days:
+        return None
+    if first_b.prev_close != last_a.close or first_b.prev_close <= 0:
+        return None  # (3) not one clean session boundary
+    best: tuple[float, int, int] | None = None
+    for p, q in _clean_ratios(tol.corroborate_max_term):
+        err = _line_gap(fa, fb, p_lo, p_hi, p / q, 0.0)
+        if err <= tol.match and (best is None or err < best[0]):
+            best = (err, p, q)
+    if best is None:
+        return None  # (1) not a clean ratio
+    err, p, q = best
+    raw = first_b.close / first_b.prev_close - 1
+    implied = first_b.close / (first_b.prev_close * p / q) - 1
+    band = WIDEST_EQUITY_PRICE_BAND
+    if not (abs(implied) <= band < abs(raw)):
+        return None  # (2) NSE's own prices don't need the step
+    return (
+        f"not in NSE's action list, but NSE prices confirm a x{p}/{q} step (fit within "
+        f"{err:.2%}): official close {first_b.close}p vs previous {first_b.prev_close}p is "
+        f"{raw:+.2%} without the step, {implied:+.2%} with it (limit ±{band:.0%}); "
+        f"one trading day apart ({wa.last}→{wb.first})"
+    )
+
+
 def _classify_line(
     wa: _Seg,
     wb: _Seg,
@@ -328,7 +400,7 @@ def _classify_line(
     acts: Sequence[Action],
     prev_close: int | None,
     tol: Tol,
-) -> tuple[str, str]:
+) -> tuple[str, str, float | None]:
     """Explain the older window's LINE from the newer one: Kite_old(P) = a_new·T(P) + b_new,
     T(P) = r·P - s for some combination of the boundary's actions (a split/bonus scales a and
     leaves b; a subtracted dividend shifts b). Compared over the older window's price range,
@@ -336,15 +408,10 @@ def _classify_line(
     never an explanation; it only sizes an unexplained step."""
     fa, fb = wa.fit, wb.fit
     if fa is None or fb is None:
-        return "unexplained_small", "fit missing"
+        return "unexplained_small", "fit missing", None
 
     def rel_diff(r: float, s: float) -> float:
-        worst = 0.0
-        for p in (p_lo, p_hi):
-            meas = fa.a * p + fa.b
-            pred = fb.a * (r * p - s) + fb.b
-            worst = max(worst, abs(pred - meas) / meas if meas > 0 else float("inf"))
-        return worst
+        return _line_gap(fa, fb, p_lo, p_hi, r, s)
 
     names = "; ".join(sorted({x.purpose for x in acts})) or "no NSE action"
     line = f"[a {fa.a:.6f} b {fa.b:+.1f}p -> a {fb.a:.6f} b {fb.b:+.1f}p]"
@@ -364,15 +431,15 @@ def _classify_line(
         if best is None or err < best[0]:
             best = (err, applied)
     if best is not None and best[0] <= tol.match:
-        return "explained", f"Kite applied {best[1]} (line within {best[0]:.2%}) {line}"
+        return "explained", f"Kite applied {best[1]} (line within {best[0]:.2%}) {line}", None
     unverifiable = any(
         "other" in x.kinds or ("dividend" in x.kinds and x.dividend_paisa is None) for x in acts
     )
     if unverifiable:
-        return "attributed", f"step at an action that can't be checked ({names}) {line}"
+        return "attributed", f"step at an action that can't be checked ({names}) {line}", None
     mag = min(best_none, best[0] if best else float("inf"))
     cls = "unexplained_small" if mag <= tol.unexplained_small else "suspect"
-    return cls, f"step not explained by ({names}); off by {mag:.2%} {line}"
+    return cls, f"step not explained by ({names}); off by {mag:.2%} {line}", mag
 
 
 def analyse(days: Sequence[DayObs], actions: Sequence[Action], tol: Tol) -> Analysis:
@@ -469,11 +536,18 @@ def analyse(days: Sequence[DayObs], actions: Sequence[Action], tol: Tol) -> Anal
         first_b = wb.members[0]
         prev_close = first_b.nse.prev_close if first_b.nse else None
         if price_step:
-            cls, detail = _classify_line(wa, wb, p_lo, p_hi, acts, prev_close, tol)
+            cls, detail, mag = _classify_line(wa, wb, p_lo, p_hi, acts, prev_close, tol)
         else:
-            cls, detail = _classify(g_ratio or 1.0, acts, None, tol, "1m-grain")
+            cls, detail, mag = _classify(g_ratio or 1.0, acts, None, tol, "1m-grain")
             if cls == "explained":
                 cls = "attributed"  # a grain-only step can't be "explained" by a price ratio
+            if cls == "attributed":
+                mag = None
+        if cls == "suspect" and price_step and not grain_step and not acts:
+            gap_days = any(wa.last < o.d < wb.first for o in days)
+            evidence = _corroborate(wa, wb, p_lo, p_hi, gap_days, tol)
+            if evidence is not None:
+                cls, detail, mag = "corroborated", f"{evidence}; {detail}", None
         if price_step and grain_step:
             detail += f"; 1m grain also steps x{g_ratio:.6f}"
         if not price_step:  # price steps already describe both lines
@@ -483,7 +557,7 @@ def analyse(days: Sequence[DayObs], actions: Sequence[Action], tol: Tol) -> Anal
         if cls == "suspect":
             suspect.update((a_k, b_k))
         ids = tuple(sorted({i for x in acts for i in x.ids}))
-        events.append(Event(wb.first, ratio, g_ratio, ids, cls, detail))
+        events.append(Event(wb.first, ratio, g_ratio, ids, cls, detail, mag))
 
     if valid:
         last = windows[valid[-1]]
@@ -707,8 +781,9 @@ async def store_analysis(conn: Any, symbol: str, analysis: Analysis, now: dateti
     if analysis.events:
         await conn.executemany(
             """INSERT INTO app.adjustment_events
-               (symbol, effective_date, ratio, g_ratio, action_ids, classification, detail)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+               (symbol, effective_date, ratio, g_ratio, action_ids, classification, detail,
+                magnitude)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
             [
                 (
                     symbol,
@@ -718,6 +793,7 @@ async def store_analysis(conn: Any, symbol: str, analysis: Analysis, now: dateti
                     list(e.action_ids),
                     e.classification,
                     e.detail[:500],
+                    _num(e.magnitude),
                 )
                 for e in analysis.events
             ],

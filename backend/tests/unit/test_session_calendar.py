@@ -90,3 +90,9 @@ def test_thin_market_never_declares_a_market_wide_day() -> None:
     b[12] = (b[12][0], 300)
     out = classify({"A": a, "B": b}, {"A": "BSE", "B": "BSE"}, RULES)
     assert out["A"][12][3] == "short"
+
+
+def test_a_step_back_up_is_also_a_new_normal() -> None:
+    """SEBI 15 Oct 2026 (from 2026-12-07): CTS for CAS stocks returns to 15:30, 360 → 375."""
+    counts = [375] * 30 + [360] * 40 + [375] * 20
+    assert instrument_norms(counts, RULES) == [375] * 30 + [360] * 40 + [375] * 20

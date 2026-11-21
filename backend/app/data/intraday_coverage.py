@@ -9,7 +9,10 @@ benchmark or percentile. Per session:
   market_short  short on a market-wide short day (outage / muhurat / half-day) — reported,
                 not flagged
   unknown       no norm yet (too few sessions) → not guessed
-Plus `missing_sessions`: exchange sessions inside a symbol's span with no bars at all.
+Plus sessions inside a symbol's span with no bars at all, split in two:
+  not_traded    an equity NSE didn't trade that day (the archive loaded; no official row) —
+                a suspension, not a data gap; reported, never flagged
+  missing       everything else (NSE traded it, the archive can't vouch, or an index)
 Nothing here quarantines data — it reports, and later stages decide what is usable.
 """
 
@@ -21,7 +24,7 @@ from typing import Any
 
 _SQL = """
 WITH s AS (
-    SELECT i.symbol, x.session_date, x.bars, st.expected,
+    SELECT i.symbol, x.sid, x.session_date, x.bars, st.expected,
            COALESCE(st.status, 'unknown') AS status
     FROM app.intraday_sessions x
     JOIN app.instrument_ids i USING (sid)
@@ -29,7 +32,7 @@ WITH s AS (
            ON st.sid = x.sid AND st.session_date = x.session_date
 ),
 per AS (
-    SELECT symbol, min(session_date) AS first_d, max(session_date) AS last_d,
+    SELECT symbol, min(sid) AS sid, min(session_date) AS first_d, max(session_date) AS last_d,
            count(*) AS sessions,
            sum(bars) AS bars,
            count(*) FILTER (WHERE status = 'complete') AS complete,
@@ -39,16 +42,34 @@ per AS (
            count(*) FILTER (WHERE status = 'market_short') AS market_short,
            count(*) FILTER (WHERE status = 'unknown') AS unknown
     FROM s GROUP BY symbol
+),
+-- exchange sessions inside the symbol's span with no bars at all ((sid, date) is unique)
+absent AS (
+    SELECT p.symbol, e.session_date
+    FROM per p
+    JOIN app.exchange_sessions e
+      ON e.exchange = split_part(p.symbol, ':', 1)
+     AND e.session_date BETWEEN p.first_d AND p.last_d
+    WHERE NOT EXISTS (SELECT 1 FROM app.intraday_sessions x
+                       WHERE x.sid = p.sid AND x.session_date = e.session_date)
+),
+gaps AS (
+    SELECT a.symbol, count(*) AS absent,
+           count(*) FILTER (
+               WHERE u.kind = 'equity'
+                 AND EXISTS (SELECT 1 FROM app.nse_archive_files f
+                              WHERE f.trade_date = a.session_date AND f.status = 'ok')
+                 AND NOT EXISTS (SELECT 1 FROM app.nse_bhav n
+                                  WHERE n.symbol = a.symbol AND n.trade_date = a.session_date)
+           ) AS not_traded
+    FROM absent a JOIN app.universe u USING (symbol)
+    GROUP BY a.symbol
 )
--- missing = exchange sessions in the symbol's span - the symbol's sessions in that span.
--- (sid, session_date) is unique, so this is exact and linear.
 SELECT p.symbol, p.first_d, p.last_d, p.sessions, p.bars, p.complete, p.short,
        p.missing_minutes, p.excess, p.market_short, p.unknown,
-       (SELECT count(*) FROM app.exchange_sessions e
-         WHERE e.exchange = split_part(p.symbol, ':', 1)
-           AND e.session_date BETWEEN p.first_d AND p.last_d
-       ) - p.sessions AS missing_sessions
-FROM per p
+       COALESCE(g.absent - g.not_traded, 0) AS missing_sessions,
+       COALESCE(g.not_traded, 0) AS not_traded_sessions
+FROM per p LEFT JOIN gaps g USING (symbol)
 ORDER BY p.symbol
 """
 
@@ -67,6 +88,7 @@ class SymbolCompleteness:
     unknown: int
     missing_sessions: int
     market_short: int = 0
+    not_traded_sessions: int = 0  # NSE didn't trade the equity (suspension): not a data gap
 
     @property
     def complete_pct(self) -> float:
@@ -93,6 +115,7 @@ async def completeness(conn: Any) -> list[SymbolCompleteness]:
             r["unknown"],
             r["missing_sessions"],
             r["market_short"],
+            r["not_traded_sessions"],
         )
         for r in await conn.fetch(_SQL)
     ]
@@ -127,13 +150,17 @@ async def review_sessions(conn: Any, symbol: str, limit: int = 50) -> list[dict[
     ]
 
 
-async def intraday_report(conn: Any, now: datetime) -> dict[str, Any]:
+async def intraday_report(
+    conn: Any, now: datetime, analysis_start: date | None = None
+) -> dict[str, Any]:
+    """analysis_start: INTRADAY_ANALYSIS_START (DEC-2015), reported so the default is visible."""
     rows = await completeness(conn)
     size = float(await conn.fetchval("SELECT pg_database_size(current_database())")) / 1024**3
     total_rows = sum(r.bars for r in rows)
     return {
         "generated_at": now.isoformat(),
         "db_size_gb": round(size, 3),
+        "analysis_start": analysis_start.isoformat() if analysis_start else None,
         "summary": {
             "symbols": len(rows),
             "minute_bars": total_rows,
@@ -145,6 +172,7 @@ async def intraday_report(conn: Any, now: datetime) -> dict[str, Any]:
             "market_short_sessions": sum(r.market_short for r in rows),
             "unknown_sessions": sum(r.unknown for r in rows),
             "missing_sessions": sum(r.missing_sessions for r in rows),
+            "not_traded_sessions": sum(r.not_traded_sessions for r in rows),
             "oldest": min((r.first for r in rows), default=None)
             and min(r.first for r in rows).isoformat(),
             "newest": max((r.last for r in rows), default=None)

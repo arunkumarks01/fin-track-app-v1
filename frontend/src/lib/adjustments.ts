@@ -38,7 +38,14 @@ function counts(v: unknown, what: string): Record<string, number> {
 
 export type LedgerStatus = { dates: number; oldest: string | null; newest: string | null };
 
-export type ReviewItem = { symbol: string; date: string; cls: string; detail: string };
+export type ReviewItem = {
+  symbol: string;
+  date: string;
+  cls: string;
+  /** measured size of an unexplained step (fraction); null = not sized */
+  magnitude: number | null;
+  detail: string;
+};
 
 export type AdjustmentsSummary = {
   lastFinalSession: string;
@@ -51,6 +58,8 @@ export type AdjustmentsSummary = {
   driftEvents: number;
   checksStale: number;
   review: ReviewItem[];
+  /** unexplained steps below the review threshold: refit noise, counted not listed */
+  reviewNoise: { count: number; below: number };
 };
 
 export function parseAdjustmentsSummary(body: unknown): AdjustmentsSummary {
@@ -68,6 +77,8 @@ export function parseAdjustmentsSummary(body: unknown): AdjustmentsSummary {
   }
   const ca = rec(b.corporate_actions, "corporate_actions");
   if (!Array.isArray(b.review)) fail("review");
+  const noise = rec(b.review_noise, "review_noise");
+  if (typeof noise.below !== "number" || !Number.isFinite(noise.below)) fail("review_noise.below");
   return {
     lastFinalSession: str(b.last_final_session, "last_final_session"),
     archive,
@@ -84,9 +95,16 @@ export function parseAdjustmentsSummary(body: unknown): AdjustmentsSummary {
         symbol: str(r.symbol, "symbol"),
         date: str(r.date, "date"),
         cls: str(r.class, "class"),
+        magnitude:
+          r.magnitude === null
+            ? null
+            : typeof r.magnitude === "number" && Number.isFinite(r.magnitude)
+              ? r.magnitude
+              : fail("magnitude"),
         detail: str(r.detail, "detail"),
       };
     }),
+    reviewNoise: { count: num(noise.count, "review_noise.count"), below: noise.below },
   };
 }
 

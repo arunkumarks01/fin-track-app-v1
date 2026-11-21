@@ -16,8 +16,12 @@ on-read derivation) and 1c (NSE archive, measured adjustments, drift re-check) a
 **The Phase-1 data-coverage gate was opened by the user on 2026-11-20 (DEC-GATE1).** The five 1d decisions are
 recorded as **provisional** (DEC-1D-*): `websockets` + `pyarrow`; Full-mode ticks, compact schema, short hot window,
 fail-closed Parquet export; a narrow option chain; raw snapshots only (greeks in Phase 2); new slice 1f (F&O
-history from the archive). Tick sizing waits on a full-session probe; build 1d only after the user locks them. Before building 1e (reference data), propose its sources and wait
-for approval. Open, non-blocking: the 2015 data policy and the 'corroborated' rule (DEC-GATE1).
+history from the archive). Tick sizing waits on a full-session probe; build 1d only after the user locks them. 1e (reference data) sources are
+**approved 2026-11-21** (DEC-1E-SOURCES, `docs/PROPOSAL_1E_SOURCES.md`): FII/DII = derivatives positioning only,
+GIFT Nifty + FRED instead of US futures, fundamentals-lite, `defusedxml` approved; build in the proposal's order
+(Kite segments after Monday's history check; FRED waits for the user's `FRED_API_KEY`). Decided 2026-11-21:
+**DEC-2015** (intraday analysis starts `INTRADAY_ANALYSIS_START` = 2016-01-01; 2015 1m kept, opt-in, badged) and
+**DEC-CORROB** (below).
 
 ## Non-negotiable laws (ARCHITECTURE §2)
 
@@ -143,14 +147,20 @@ injected `Clock` (`app/core/clock.py`). Never a source of truth.
   Kite price grid, never below ±2.5 paisa, or it is not accepted), stepping only at matching NSE actions (`app.adjustment_days`, `adjustment_events`), with
   separate ratios for the 1m grain and volume; as-traded 1m = `app.minute_as_traded()` = (K÷G − b)÷a.
   Never model prices from `app.corporate_actions` — it only explains steps.
+- An unlisted step is `corroborated` (data kept measured, always on the review list) only when NSE's own prices
+  prove a clean p/q split/bonus across a one-session boundary (DEC-CORROB, `_corroborate()`); anything less stays
+  `suspect`. Never accept an action from any other source.
 - NSE names are resolved per day via `app.symbol_changes` (NSE `symbolchange.csv`); official rows prefer
   EQ, then BE/BZ (trade-for-trade). Bumping `PARSE_VERSION` re-scans older days once (missing rows only).
 - NSE source = the static archive (`nsearchives.nseindia.com` PR zips, Bc + Pd members) with an honest
   User-Agent. A 403 stops the load; **never impersonate a browser or work around a refusal/CAPTCHA**.
 - Each catch-up re-fetches the newest stored session (drift re-check): consistent rescaling →
   `app.adjustment_drift`; the only bar-rewrite path is the audited `repair.py` (`app.data_repairs`).
-- Since 2026-08-03 NSE equities have a closing auction (SEBI circular 16 Jan 2026, HO/47/11/11(3)2025-MRD-POD2/I/2765/2026;
-  text not yet read): their 1m series ends 15:14 (indices 15:29), rolled out per instrument.
+- Closing auction (CAS): since 2026-08-03 (SEBI 16 Jan 2026, …/I/2765/2026) F&O stocks' continuous trading ends 15:15
+  (1m ends 15:14; others and indices 15:29), CAS 15:15–15:30, derivatives to 15:40, rolled out per instrument.
+  **From 2026-12-07** (SEBI 15 Oct 2026, …/I/23843/2026): continuous trading to 15:30 for all stocks (1m back to 375),
+  CAS 15:30–15:40, derivatives to 15:45 (expiring index contracts 15:30), post-close 15:50–16:00; expiry settlement =
+  VWAP of the last 30 min of continuous trading. The per-instrument calendar re-baselines both steps.
 - Daily gate gap check is listing-aware: bars before a verified listing (gap ≥ 60 NSE sessions with no
   NSE trading) are flagged `pre_listing` and not counted.
 
@@ -167,6 +177,7 @@ injected `Clock` (`app/core/clock.py`). Never a source of truth.
 - Completeness is **per instrument** (DEC-1B-CAL, `app/data/session_calendar.py`): each session vs the
   instrument's own norm, re-baselined on a persistent step-change (the 2026 closing auction 375→360),
   with a market-wide short-day floor; never a benchmark/percentile. Shortfalls are flagged, never quarantined.
+  A session with no bars is `not_traded` (not missing) only for an equity NSE's archive says didn't trade that day.
 - 1d candles stay Kite-native (the official close is not the last 1m close).
 
 **Charts (DEC-CHART)** — `app/data/candles.py`, `/api/data/candles`, frontend `/charts`: openalgo-charts over

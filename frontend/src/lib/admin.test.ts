@@ -169,6 +169,7 @@ const sym = (symbol: string, review: number) => ({
   excess: 0,
   unknown: 0,
   missing_sessions: 0,
+  not_traded_sessions: 0,
   complete_pct: 100 - review,
   review,
 });
@@ -176,6 +177,7 @@ const sym = (symbol: string, review: number) => ({
 const INTRADAY = {
   generated_at: "2026-11-20T03:00:00+00:00",
   db_size_gb: 19.963,
+  analysis_start: "2016-01-01",
   summary: {
     symbols: 3,
     minute_bars: 112500,
@@ -187,6 +189,7 @@ const INTRADAY = {
     unknown_sessions: 0,
     market_short_sessions: 4,
     missing_sessions: 0,
+    not_traded_sessions: 72,
     oldest: "2015-01-09",
     newest: "2026-11-19",
   },
@@ -202,11 +205,25 @@ describe("parseIntradayCoverage", () => {
       complete: 290,
       short: 10,
       marketShort: 4,
+      notTradedSessions: 72,
+      analysisStart: "2016-01-01",
     });
     expect(c.worst.map((s) => [s.symbol, s.review])).toEqual([
       ["NSE:AAA", 7],
       ["NSE:BBB", 3],
     ]);
+  });
+
+  it("rejects a missing or malformed analysis start", () => {
+    const without: Record<string, unknown> = { ...INTRADAY };
+    delete without.analysis_start;
+    expect(() => parseIntradayCoverage(without)).toThrow(AdminContractError);
+    expect(() => parseIntradayCoverage({ ...INTRADAY, analysis_start: null })).toThrow(
+      AdminContractError,
+    );
+    expect(() => parseIntradayCoverage({ ...INTRADAY, analysis_start: "2016" })).toThrow(
+      AdminContractError,
+    );
   });
 
   it("rejects a summary with a missing count", () => {

@@ -119,7 +119,11 @@ async def start_intraday_ingest(request: Request, symbols: str | None = None) ->
 @router.get("/coverage/intraday")
 async def get_intraday_coverage(request: Request, review: str | None = None) -> JSONResponse:
     async with request.app.state.pool.acquire() as conn:
-        report = await intraday_report(conn, request.app.state.clock.now())
+        report = await intraday_report(
+            conn,
+            request.app.state.clock.now(),
+            request.app.state.settings.intraday_analysis_start,
+        )
         if review:
             report["review"] = {"symbol": review, "sessions": await review_sessions(conn, review)}
     return JSONResponse(report)

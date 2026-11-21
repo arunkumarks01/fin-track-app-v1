@@ -1,5 +1,133 @@
 # Changelog
 
+## [Unreleased] — Decisions taken: DEC-2015, DEC-CORROB, DEC-1E-SOURCES (2026-11-21)
+
+The user took every recommendation in `OPEN_DATA_DECISIONS.md` and `PROPOSAL_1E_SOURCES.md`.
+
+### DEC-CORROB — the `corroborated` class (built)
+- `app/data/adjustment.py`: an unlisted step (no NSE action, price step, no 1m-grain step) that would be
+  `suspect` becomes `corroborated` only if NSE's own prices prove it (`_corroborate()`):
+  1. the older line equals the newer one × a clean p/q (p, q ≤ `ADJ_CORROBORATE_MAX_TERM` = 10) within `ADJ_MATCH`;
+  2. official close ÷ (previous official close × p/q) − 1 is inside ±20% (the widest equity band, an exchange
+     constant) while the raw return is outside it;
+  3. one-session boundary: no day between the windows, and the step day's official prev_close equals the older
+     window's last official close.
+- Plain English on Admin: the class shows as "confirmed by NSE prices", and the detail starts "not in NSE's action list, but NSE prices confirm a x1/4 step…". The internal name stays `corroborated`.
+- Both windows stay `measured`; the evidence is in the event detail; every case is on the Admin review list
+  (after suspects and official mismatches). Admin labels the class.
+- Migration **0009_corroborated** widens the classification CHECK (the list stays closed — a test inserts an
+  unknown class and expects the CHECK to refuse it).
+- Tests: corroborated at ×1/4, ×1/5, ×1/2; stays `suspect` when NSE's prices are continuous, at an unclean ratio,
+  at a clean ratio beyond the max term (1/11), across an unmeasured day, or when a listed action disagrees. Each
+  rejection test was checked to fail with its condition switched off.
+- `ADJ_CORROBORATE_MAX_TERM` (default 10, 2–50) in config and `.env.example`.
+- **Live re-measure (224 symbols, 2026-11-21)** against a before-snapshot. Exactly **2** of 1,165 events changed
+  class:
+  - 360ONE 2023-03-02 (×1/4): implied return −0.51%, raw −75.13%.
+  - SHRIRAMFIN 2025-01-10 (×1/5): implied return −5.33%, raw −81.07%.
+  - Both went suspect → corroborated, and **3,349** days went suspect → measured; nothing else moved.
+  - NMDC's two steps stay `suspect`; only 26 suspect days remain.
+  - 360ONE's raw 1m now loads on both sides of the bonus with 0 bars omitted.
+  - Review list: 70 rows (2 suspect, 2 corroborated, 66 material). One fewer material row because the run
+    stored exact sizes in place of the 0008 back-fill parsed from rounded text: NMDC 2021-10-11 is 0.2462%, not
+    0.25%, so it now counts as noise (777).
+
+### DEC-2015 — intraday analysis starts 2016-01-01 (built as config)
+- `INTRADAY_ANALYSIS_START` (default 2016-01-01), for Phase 2+ intraday backtests/statistics. No data change.
+- `/api/data/coverage/intraday` reports it as `analysis_start`; the Admin 1-minute panel shows "Analysis starts"
+  (strict parse: a missing or non-ISO value is a contract error).
+
+### Planned, not built — incremental re-measure
+- Today every analysis pass re-fits all 224 symbols from 2015 (~30 min). Plan:
+  - **skip unchanged symbols:** store a per-symbol fingerprint of everything the fit reads (1d bars, NSE rows,
+    actions, 1m aggregates, name map) plus a rule version (code + `ADJ_*` settings); re-fit only on a mismatch,
+    and a missing fingerprint means re-fit (fail closed);
+  - **re-fit only the tail in time:** keep the settled windows and re-fit from the start of the last determined
+    window, since a daily run gives every symbol one new day.
+- Accepted only with a golden test (incremental result == full result) and a weekly full pass as a cross-check.
+- Rule changes (like DEC-CORROB) still need one full pass.
+- Build it before 1d goes live: the 08:30 daily job plus a full pass can run past 09:00, when pre-open tick
+  capture starts in the same process.
+
+### DEC-1E-SOURCES — 1e approved
+- FII/DII = derivatives positioning only; GIFT Nifty + FRED prior close instead of US futures; fundamentals-lite
+  now, statement-level FA later with a licensed vendor; `defusedxml` approved. `FRED_API_KEY` to be created by
+  the user. Recorded in DECISIONS, CLAUDE.md, and the two docs (now marked decided/approved).
+
+## [Unreleased] — Waiting-for-Monday work: CAS circulars, open decisions, 1e sources, Admin fixes (2026-11-21)
+
+### Closing auction: both SEBI circulars read
+- **16 Jan 2026** (…/I/2765/2026), in force since 2026-08-03 per instrument: F&O stocks' continuous trading ends
+  15:15 (1m ends 15:14), CAS 15:15–15:30, derivatives to 15:40.
+- **15 Oct 2026** (HO/47/11/11(3)2025-MRD-POD2/I/23843/2026), **from 2026-12-07**:
+  - continuous trading to 15:30 for all stocks: equity 1m goes back to 375 minutes
+  - CAS 15:30–15:40, with a random close 15:38–15:40
+  - derivatives to 15:45 (expiring index contracts stop at 15:30)
+  - post-close 15:50–16:00
+  - expiry settlement = VWAP of the last 30 minutes of continuous trading
+  - iceberg-order changes from 2027-02-08
+  - Read from SEBI's PDF and its Sep 2026 consultation paper (honest client). SEBI's search endpoint answered
+    530 and was not retried. The January text itself is still unread; the consultation paper's comparison table
+    gives its timings.
+- **For 1d:** Monday's probe runs under the current regime. From 7 Dec, tick capture must cover derivatives to
+  15:45, and the CAS price/quantity is disseminated after 15:40.
+- **Calendar:** the per-instrument calendar re-baselines a step **up** as well as down. A unit test pins 360 → 375.
+
+### Open decisions written up — `docs/OPEN_DATA_DECISIONS.md`
+- **2015 policy:**
+  - 1m 94.16% complete
+  - 4,550 market-wide short days (vs 160–336 in later years)
+  - 156/224 instruments
+  - Recommended: store, but default-exclude from intraday analysis (start 2016-01-01).
+- **"Corroborated" actions:**
+  - 360ONE (×0.25) and SHRIRAMFIN (×0.20) are visible in NSE's own prices; implied day returns −0.5% / −5.3%.
+  - Today's rule costs 3,349 as-traded-unusable days.
+  - Recommended: an automatic, listed `corroborated` class with three conditions. NMDC stays suspect.
+
+### 1e sources proposed — `docs/PROPOSAL_1E_SOURCES.md` (awaiting approval)
+- **Verified:**
+  - NSE archive delivery % (MTO, 2015→)
+  - participant-wise OI/volume (2015→)
+  - bulk/block deals (current day only)
+  - announcements and board meetings inside the PR zips already fetched (2015→)
+  - Kite India VIX, **GIFT NIFTY (NSEIX)**, MCX and CDS instruments
+  - FRED API (needs a free key)
+  - publisher RSS (Business Standard, Mint, ET) and RBI RSS
+- **Refused or unreachable** (stopped, not worked around):
+  - BSE API: 403
+  - NSDL FPI and FRED's CSV host: no response from here or the VPS
+  - NSE results pages: browser-only
+- **Four questions for the user:**
+  - FII/DII cash flows
+  - US futures
+  - statement-level fundamentals
+  - the `defusedxml` dependency
+
+### Admin fixes
+- **Coverage report 6.7–7.1 s → 2.8 s.**
+  - Quarantine and flag counts are aggregated once instead of one correlated subquery per symbol.
+  - JIT is off for the report's queries: Postgres spent ~1.8 s compiling ~600 functions for a sub-second query.
+  - Results are identical on live data: 224 rows, 40 unresolved and 4,860 total quarantined, 8,417 flags.
+- **Review list: material steps only.**
+  - Migration **0008** adds `adjustment_events.magnitude`. New runs write it; existing rows are back-filled once
+    from our own detail text.
+  - Unexplained steps of at least `ADJ_REVIEW_MIN_STEP` (default 0.25%) are listed, largest first. Smaller ones are
+    counted as refit noise: median 0.03%, 776 of 843.
+  - A step of unknown size is always listed.
+  - Live: 100 rows (96 noise) → **71** (4 suspect + 67 material).
+  - The threshold is bound as an exact decimal. A float bound landed just above 0.0025 and moved three steps sized
+    exactly at the threshold into the noise count. Caught on live data; regression test added.
+- **1m view: suspensions are not data gaps.**
+  - An equity session with no bars counts as `not_traded` only when NSE's archive loaded that day and has no row
+    for the symbol. Indices, days NSE traded, and days the archive can't vouch for stay `missing`.
+  - Live: FORCEMOT's 76 missing sessions → 0 missing, 76 not traded. 213 real missing sessions elsewhere remain
+    flagged.
+  - The endpoint went 0.6 s → 1.5 s, with JIT ruled out.
+
+### Noted
+- NSE lists each corporate action once per series (EQ, BE, BL, IQ, T0, TL): 13,808 rows, 4,985 distinct. By design;
+  the matcher dedupes by action.
+
 ## [Unreleased] — Charts page: OpenAlgo Charts over FinTrack candles (2026-11-20)
 
 **DEC-CHART** revises D21: openalgo-charts 2.6.9 (exact pin, Apache-2.0) replaces lightweight-charts for
