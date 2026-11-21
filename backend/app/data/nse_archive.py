@@ -429,7 +429,12 @@ class NseArchiveClient:
 
     async def fetch_zip(self, d: date) -> bytes | None:
         """The day's PR zip, or None when the archive has no file for it (404)."""
-        url = archive_url(self._s.nse_archive_base_url, d)
+        return await self.fetch_file(archive_url(self._s.nse_archive_base_url, d))
+
+    async def fetch_file(self, url: str) -> bytes | None:
+        """One archive file, or None when the archive has none (404). Transport errors, 429
+        and 5xx are retried with backoff; 401/403 stop (never retried, never worked around);
+        other statuses fail. Size-capped."""
         max_bytes = int(self._s.nse_archive_max_zip_mb * 1024 * 1024)
         attempts = self._s.nse_archive_retries + 1
         last = ""
@@ -446,7 +451,7 @@ class NseArchiveClient:
             else:
                 if resp.status_code == 200:
                     if len(resp.content) > max_bytes:
-                        raise NseArchiveError(f"zip too large: {len(resp.content)} bytes")
+                        raise NseArchiveError(f"file too large: {len(resp.content)} bytes")
                     return resp.content
                 if resp.status_code == 404:
                     return None

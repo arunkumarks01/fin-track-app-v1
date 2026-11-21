@@ -14,9 +14,14 @@ from decimal import Decimal
 from typing import Any
 
 from app.core.config import Settings
+from app.core.tradingdate import MARKET_TZ
 from app.data.coverage import symbol_coverage
 from app.data.intraday_coverage import completeness
 from app.data.nse_archive import PD_SERIES as SHARE_SERIES
+from app.data.reference_report import delivery_history, latest_market_cap, stock_events
+
+DELIVERY_DAYS = 20  # the recent window shown on the page (and its weighted average)
+EVENT_DAYS = 365  # bulk/block deals shown for the last year
 
 # how Kite's measured prices relate to one NSE corporate action
 #   matched       Kite's price change matches the action
@@ -93,6 +98,9 @@ async def stock_profile(
             list(SHARE_SERIES),
         ),
         "unlisted_steps": await _unlisted_steps(conn, settings, symbol),
+        "delivery": await delivery_history(conn, symbol, DELIVERY_DAYS),
+        "market_cap": await latest_market_cap(conn, symbol),
+        "events": await stock_events(conn, symbol, now.astimezone(MARKET_TZ).date(), EVENT_DAYS),
         "as_traded_days": {
             r["quality"]: r["n"]
             for r in await conn.fetch(

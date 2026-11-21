@@ -1,6 +1,7 @@
 import { HealthPanel } from "./health-panel";
 import { IngestPanel } from "./ingest-panel";
 import { MarketOverview } from "./market-overview";
+import { ParticipantsCard } from "./participants-card";
 
 export default function Home() {
   return (
@@ -13,6 +14,7 @@ export default function Home() {
         </p>
       </div>
       <MarketOverview />
+      <ParticipantsCard />
       <div className="grid gap-4 lg:grid-cols-2">
         <section
           aria-label="Backend health"

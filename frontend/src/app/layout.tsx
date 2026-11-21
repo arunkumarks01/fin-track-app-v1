@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
+import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 
 import "./globals.css";
@@ -19,7 +20,10 @@ export const metadata: Metadata = {
   description: "Learning-first NSE research and paper-trading platform",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  // the sidebar saves its open/collapsed state in this cookie; reading it here keeps a collapsed
+  // menu collapsed after a reload (no flash of the open menu)
+  const sidebarOpen = (await cookies()).get("sidebar_state")?.value !== "false";
   return (
     // the boot script sets the theme class before paint; React must not "fix" it back
     <html lang="en" className={cn("dark font-sans", geist.variable)} suppressHydrationWarning>
@@ -29,7 +33,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       <body className="antialiased">
         <Providers>
           <TooltipProvider>
-            <SidebarProvider>
+            <SidebarProvider defaultOpen={sidebarOpen}>
               <AppSidebar />
               <SidebarInset className="min-w-0">
                 <AppHeader />

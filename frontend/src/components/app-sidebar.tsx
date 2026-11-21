@@ -1,6 +1,14 @@
 "use client";
 
-import { CandlestickChart, Gauge, LayoutDashboard, LineChart, ShieldCheck } from "lucide-react";
+import {
+  CandlestickChart,
+  ChevronsLeft,
+  ChevronsRight,
+  Gauge,
+  LayoutDashboard,
+  LineChart,
+  ShieldCheck,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -16,6 +24,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 // Only pages that exist. New items appear when their phase lands — never placeholders.
@@ -28,6 +37,24 @@ const SYSTEM = [{ href: "/admin", label: "Admin · Health", icon: ShieldCheck }]
 
 function isActive(path: string, href: string): boolean {
   return href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`);
+}
+
+/** A visible collapse / expand control (also: the top-bar button, Ctrl/⌘+B, the sidebar edge). */
+function CollapseButton() {
+  const { state, toggleSidebar, isMobile } = useSidebar();
+  if (isMobile) return null; // on phones the menu is a slide-out sheet with its own close
+  const collapsed = state === "collapsed";
+  const label = collapsed ? "Expand menu" : "Collapse menu";
+  return (
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <SidebarMenuButton onClick={toggleSidebar} tooltip={label} aria-label={label}>
+          {collapsed ? <ChevronsRight aria-hidden /> : <ChevronsLeft aria-hidden />}
+          <span>{label}</span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
+  );
 }
 
 export function AppSidebar() {
@@ -55,7 +82,7 @@ export function AppSidebar() {
                 </span>
                 <span className="grid leading-tight">
                   <span className="font-semibold">FinTrack</span>
-                  <span className="text-xs text-sidebar-foreground/60">v2 · research</span>
+                  <span className="text-sm text-sidebar-foreground/60">v2 · research</span>
                 </span>
               </Link>
             </SidebarMenuButton>
@@ -77,9 +104,10 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <p className="px-2 text-xs text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden">
+        <p className="px-2 text-sm text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden">
           Phase 1 · data foundation. Paper only.
         </p>
+        <CollapseButton />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

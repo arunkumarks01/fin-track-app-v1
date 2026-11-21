@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type ReactNode, useState } from "react";
 
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+
+import { type ChartConfig, ChartContainer, ChartTooltip } from "@/components/ui/chart";
 import { formatInt, formatPct, formatRupees } from "@/lib/format";
 import { FLAG_LABELS, label, QUALITY_TEXT, QUARANTINE_REASONS } from "@/lib/labels";
 import { describeAction, fetchStock, type KiteStatus, type Stock } from "@/lib/stock";
@@ -31,14 +34,6 @@ const FILTERS: { id: ActionFilter; text: string }[] = [
   { id: "price", text: "Splits & bonuses" },
   { id: "dividend", text: "Dividends" },
   { id: "other", text: "Other" },
-];
-
-const COMING_WITH_1E = [
-  "Delivery %",
-  "Company announcements",
-  "Board meetings and results dates",
-  "Bulk and block deals",
-  "Market cap",
 ];
 
 export function StockView() {
@@ -97,21 +92,83 @@ function StockDetail({ symbol }: { symbol: string }) {
         <DailyHealthCard s={s} />
         <MinuteHealthCard s={s} />
       </div>
+      {s.kind === "equity" && <DeliveryCard s={s} />}
       <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
         <Actions s={s} />
         <div className="flex flex-col gap-4">
           <Names s={s} />
           <AsTraded s={s} />
-          <Section title="Coming with slice 1e" note="Not loaded yet — nothing to show.">
-            <ul className="list-inside list-disc text-sm text-muted-foreground">
-              {COMING_WITH_1E.map((c) => (
-                <li key={c}>{c}</li>
-              ))}
-            </ul>
-          </Section>
         </div>
       </div>
       <UnlistedSteps s={s} />
+      {s.kind === "equity" && <CompanyEvents events={s.events} />}
+    </div>
+  );
+}
+
+function CompanyEvents({ events }: { events: Stock["events"] }) {
+  return (
+    <div className="grid gap-4 xl:grid-cols-3">
+      <Section title="Company announcements" note="Latest 30 headlines stored from NSE.">
+        {events.announcements.length === 0 ? (
+          <p className="text-muted-foreground">No announcements stored.</p>
+        ) : (
+          <ul className="divide-y text-sm">
+            {events.announcements.map((a, i) => (
+              <li key={`${a.date}-${i}`} className="py-2">
+                <p className="text-muted-foreground">
+                  {a.date}
+                  {a.category && ` · ${a.category}`}
+                </p>
+                <p>{a.body}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+      <Section
+        title="Board meetings and results dates"
+        note="Latest 12 meeting dates stored from NSE."
+      >
+        {events.boardMeetings.length === 0 ? (
+          <p className="text-muted-foreground">No meetings stored.</p>
+        ) : (
+          <ul className="divide-y text-sm">
+            {events.boardMeetings.map((m) => (
+              <li key={`${m.date}-${m.purpose}`} className="py-2">
+                <p>
+                  <time dateTime={m.date}>{m.date}</time>
+                  {m.isResults && " · Financial results"}
+                </p>
+                <p>{m.purpose}</p>
+                <p className="text-muted-foreground">First seen {m.firstSeen}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+      <Section title="Bulk and block deals" note="Captured NSE deals from the past year.">
+        {events.deals.length === 0 ? (
+          <p className="text-muted-foreground">No deals captured in this period.</p>
+        ) : (
+          <ul className="divide-y text-sm">
+            {events.deals.map((d, i) => (
+              <li key={`${d.date}-${i}`} className="py-2">
+                <p className="text-muted-foreground">
+                  {d.date} · {d.kind === "bulk" ? "Bulk" : "Block"}
+                </p>
+                <p>{d.client}</p>
+                <p>
+                  {d.side === "BUY" ? "Bought" : "Sold"} {formatInt(d.quantity)} at{" "}
+                  {formatRupees(d.pricePaisa)}
+                  {!d.priceExact && <span className="text-warn"> (rounded)</span>}
+                </p>
+                {d.remarks && <p className="text-muted-foreground">{d.remarks}</p>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
     </div>
   );
 }
@@ -151,6 +208,21 @@ function Basics({ s }: { s: Stock }) {
         <Row k="Earlier names">
           {s.names.length === 0 ? "none" : s.names.map((n) => n.old).join(", ")}
         </Row>
+        {s.kind === "equity" && (
+          <Row k="Market cap">
+            {s.marketCap ? (
+              <>
+                {formatRupees(s.marketCap.paisa)}
+                <span className="block text-muted-foreground">
+                  NSE {s.marketCap.series} · {s.marketCap.date}
+                </span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">No NSE figure stored</span>
+            )}
+          </Row>
+        )}
+        {s.marketCap && <Row k="Issue size">{formatInt(s.marketCap.issueSize)} shares</Row>}
       </dl>
     </Section>
   );
@@ -368,6 +440,95 @@ function Names({ s }: { s: Stock }) {
             </li>
           ))}
         </ul>
+      )}
+    </Section>
+  );
+}
+
+const DELIVERY_CONFIG = {
+  pct: { label: "Delivered", color: "var(--chart-1)" },
+} satisfies ChartConfig;
+
+/** basis points → "52.53%" (display only) */
+function bpsPct(bps: number): string {
+  return `${(bps / 100).toFixed(2)}%`;
+}
+
+function DeliveryCard({ s }: { s: Stock }) {
+  const d = s.delivery;
+  // oldest → newest for the chart
+  const points = [...d.recent].reverse().map((r) => ({ date: r.date, pct: r.delivBps / 100, r }));
+  const latest = d.recent[0];
+  return (
+    <Section
+      title="Delivery %"
+      note="Share of the day's traded quantity that was actually delivered (not squared off the same day). From NSE's daily delivery file."
+    >
+      {d.daysStored === 0 ? (
+        <p className="text-sm text-muted-foreground">Not loaded yet for this stock.</p>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[minmax(16rem,1fr)_3fr]">
+          <dl className="grid grid-cols-[auto_1fr] content-start gap-x-6 gap-y-1 text-sm">
+            <Row k={`Last ${d.window} days`}>
+              <span className="font-semibold">{d.avgBps === null ? "—" : bpsPct(d.avgBps)}</span>{" "}
+              <span className="text-muted-foreground">(weighted by volume)</span>
+            </Row>
+            {latest && (
+              <Row k={`On ${latest.date}`}>
+                {bpsPct(latest.delivBps)}{" "}
+                <span className="text-muted-foreground">
+                  ({formatInt(latest.deliverableQty)} of {formatInt(latest.tradedQty)} shares
+                  {latest.series !== "EQ" && `, series ${latest.series}`})
+                </span>
+              </Row>
+            )}
+            <Row k="History">
+              {formatInt(d.daysStored)} days ({d.oldest} → {d.newest})
+            </Row>
+          </dl>
+          <ChartContainer config={DELIVERY_CONFIG} className="aspect-auto h-44 w-full">
+            <BarChart data={points} margin={{ left: 0, right: 4 }}>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="date"
+                tickLine={false}
+                axisLine={false}
+                minTickGap={24}
+                tickFormatter={(v: string) => v.slice(5)}
+              />
+              <YAxis
+                width={40}
+                tickLine={false}
+                axisLine={false}
+                domain={[0, 100]}
+                tickFormatter={(v: number) => `${v}%`}
+              />
+              <ChartTooltip
+                cursor={{ fillOpacity: 0.1 }}
+                content={({ active, payload }) => {
+                  const r = (payload?.[0]?.payload as { r?: (typeof d.recent)[number] } | undefined)
+                    ?.r;
+                  if (!active || !r) return null;
+                  return (
+                    <div className="rounded-md border bg-popover px-2 py-1 text-xs text-popover-foreground shadow">
+                      <div className="font-medium">{r.date}</div>
+                      <div>
+                        {bpsPct(r.delivBps)} delivered · {formatInt(r.deliverableQty)} of{" "}
+                        {formatInt(r.tradedQty)}
+                      </div>
+                    </div>
+                  );
+                }}
+              />
+              <Bar
+                dataKey="pct"
+                fill="var(--color-pct)"
+                radius={[3, 3, 0, 0]}
+                isAnimationActive={false}
+              />
+            </BarChart>
+          </ChartContainer>
+        </div>
       )}
     </Section>
   );

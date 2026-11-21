@@ -92,3 +92,9 @@ def test_corroboration_term_bounds(make_settings: SettingsFactory) -> None:
         make_settings(adj_corroborate_max_term=1)  # p/q with p, q <= 1 is only 1/1
     with pytest.raises(ValidationError):
         make_settings(intraday_analysis_start="2016-13-01")
+
+
+def test_analysis_concurrency_leaves_connections_for_pages(make_settings: SettingsFactory) -> None:
+    with pytest.raises(ValidationError, match="ADJ_ANALYSIS_CONCURRENCY"):
+        make_settings(adj_analysis_concurrency=4, db_pool_max_size=4)
+    make_settings(adj_analysis_concurrency=3, db_pool_max_size=4)

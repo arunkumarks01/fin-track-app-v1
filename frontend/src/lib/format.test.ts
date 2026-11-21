@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDuration, formatInt, formatIstDateTime, formatIstTime, formatPct } from "./format";
+import {
+  formatDuration,
+  formatInt,
+  formatIstDateTime,
+  formatIstTime,
+  formatPct,
+  formatRupees,
+} from "./format";
 
 describe("format", () => {
   it("groups integers the Indian way", () => {
@@ -18,4 +25,7 @@ describe("format", () => {
     expect(formatIstTime("2026-11-19T12:48:47+00:00")).toBe("18:18:47 IST");
     expect(formatIstDateTime("2026-11-20T10:45:00+00:00")).toBe("20 Nov, 16:15 IST");
   });
+});
+it("preserves paisa when formatting a bigint market cap", () => {
+  expect(formatRupees(9007199254740999n)).toBe("₹9,00,71,99,25,47,409.99");
 });

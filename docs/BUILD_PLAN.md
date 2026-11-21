@@ -26,6 +26,24 @@ validation + quarantine, resumable rate-limited extractor, Parquet cold store (t
 coverage report green (≥95% symbols ≥250 clean daily bars, indices→2015, 0 dupes). **No
 scoring before this passes.**
 
+**Phase 1 — remaining work, in order (status 2026-11-21).** Slices 1a, 1b, 1c are built; the data gate
+was opened 2026-11-20 (DEC-GATE1). Details live where linked; this list is only the order.
+1. **1e — reference data** (DEC-1E-SOURCES, `PROPOSAL_1E_SOURCES.md` "Order of work"). Delivery,
+   participant positions, deals, RSS, announcements, board meetings, market cap, calendar import
+   and FRED ingestion are implemented. Retry previously errored participant files, load the PR history,
+   and verify live coverage. GIFT Nifty and India VIX daily and minute history are wired into the
+   extractors.
+   MCX commodities are paused at the user's request. CDS history is reachable and requires a
+   decision on exact sub-paisa prices.
+   Live FRED ingestion waits for the key, and the calendar uses a reviewed CSV.
+2. **Monday 2026-11-23:** Kite login → full-session tick probe to size storage under DEC-1D-*.
+3. **Daily re-measure** — the full-fit speedup is implemented. Check the full morning job's timing
+   before 1d is live so it ends before pre-open capture. Incremental re-fit remains a separate follow-up.
+4. **1d — ticks, option chain, Parquet cold tier** (DEC-1D-DEPS/TICKS/CHAIN/GREEKS). From
+   2026-12-07 the capture window must cover derivatives to 15:45 (SEBI closing-auction change).
+5. **1f — F&O history** from the approved NSE F&O archive and Kite active contracts (DEC-1D-OWNERS).
+6. **Phase 1 close-out:** every slice's coverage rows green on Admin → Phase 2.
+
 **Phase 2 — Indicators + analytics + tests (~1–2 wk).** Full TA suite (config-driven warmup,
 EMA200 only ≥200 bars) + options analytics (PCR, max-pain, gamma, IV rank). Golden tests vs
 reference lib, convergence tests, regression-snapshot harness seeded. *Gate:* golden +

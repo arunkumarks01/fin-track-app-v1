@@ -5,7 +5,7 @@
  */
 const intFormat = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
-export function formatInt(n: number): string {
+export function formatInt(n: number | bigint): string {
   return intFormat.format(n);
 }
 
@@ -59,8 +59,14 @@ const rupeeFormat = new Intl.NumberFormat("en-IN", {
 });
 
 /** Integer paisa → "₹1,234.50" (display only). */
-export function formatRupees(paisa: number): string {
-  return rupeeFormat.format(paisaToRupees(paisa));
+export function formatRupees(paisa: number | bigint): string {
+  if (typeof paisa === "number") return rupeeFormat.format(paisaToRupees(paisa));
+  const whole = paisa / 100n;
+  const remainder = (paisa < 0n ? -paisa : paisa) % 100n;
+  return rupeeFormat
+    .formatToParts(paisa < 0n && whole === 0n ? -0 : whole)
+    .map((part) => (part.type === "fraction" ? String(remainder).padStart(2, "0") : part.value))
+    .join("");
 }
 
 const priceFormat = new Intl.NumberFormat("en-IN", {

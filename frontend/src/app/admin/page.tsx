@@ -7,6 +7,7 @@ import { AdjustmentsPanel } from "./adjustments-panel";
 import { IntradayPanel } from "./intraday-panel";
 import { JobsPanel, QualityPanel } from "./jobs-panel";
 import { KitePanel } from "./kite-panel";
+import { ReferencePanel } from "./reference-panel";
 
 export const metadata: Metadata = { title: "Admin · FinTrack v2" };
 
@@ -53,6 +54,9 @@ export default function AdminPage() {
       </div>
       <Section title="Corporate actions & adjustments (measured against NSE official)">
         <AdjustmentsPanel />
+      </Section>
+      <Section title="Reference data">
+        <ReferencePanel />
       </Section>
       <Section title="Data quality">
         <QualityPanel />

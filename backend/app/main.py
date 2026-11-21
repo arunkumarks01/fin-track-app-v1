@@ -104,6 +104,12 @@ def create_app(
                 CronTrigger.from_crontab(cfg.intraday_ingest_cron, timezone=MARKET_TZ),
                 job_id=INTRADAY_INGEST_JOB_ID,
             )
+            register_job(
+                scheduler,
+                ingest.news_fetch,
+                CronTrigger.from_crontab(cfg.news_fetch_cron, timezone=MARKET_TZ),
+                job_id="news_fetch",
+            )
             scheduler.start()
             app.state.pool = pool
             app.state.scheduler = scheduler

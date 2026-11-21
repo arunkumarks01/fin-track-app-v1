@@ -8,6 +8,8 @@ const backendUrl = requireHttpUrl("BACKEND_URL");
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // dev-only badge: keep it off the sidebar's collapse button (bottom-left)
+  devIndicators: { position: "bottom-right" },
   async rewrites() {
     return [
       // backend liveness lives at the root; every other backend route is under /api

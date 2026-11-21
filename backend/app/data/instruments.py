@@ -22,6 +22,9 @@ log = logging.getLogger(__name__)
 KEEP_EXCHANGES = frozenset({"NSE", "NFO"})
 INDICES_SEGMENT = "INDICES"
 STOCK_FUTURES_SEGMENT = "NFO-FUT"
+GIFT_NIFTY_SYMBOL = "NSEIX:GIFT NIFTY"
+INDIA_VIX_SYMBOL = "NSE:INDIA VIX"
+REFERENCE_INDEX_SYMBOLS = (GIFT_NIFTY_SYMBOL, INDIA_VIX_SYMBOL)
 
 EXPECTED_HEADER = [
     "instrument_token",
@@ -70,8 +73,10 @@ class UniverseMember:
 
 
 def _keep(row: dict[str, str]) -> bool:
-    return row["exchange"] in KEEP_EXCHANGES or (
-        row["exchange"] == "BSE" and row["segment"] == INDICES_SEGMENT
+    return (
+        row["exchange"] in KEEP_EXCHANGES
+        or (row["exchange"] == "BSE" and row["segment"] == INDICES_SEGMENT)
+        or f"{row['exchange']}:{row['tradingsymbol']}" == GIFT_NIFTY_SYMBOL
     )
 
 
@@ -135,6 +140,27 @@ def build_universe(instruments: list[Instrument], index_symbols: list[str]) -> l
         raise InstrumentsError(f"configured indices not in the instrument master: {missing}")
     members += [UniverseMember(s, indices[s].instrument_token, "index") for s in index_symbols]
     return members
+
+
+async def historical_members(
+    conn: Any, symbols: list[str] | None, include_reference_indices: bool
+) -> list[UniverseMember]:
+    rows = await conn.fetch(
+        """SELECT symbol, instrument_token, kind FROM (
+               SELECT symbol, instrument_token, kind FROM app.universe WHERE active
+               UNION ALL
+               SELECT r.symbol, i.instrument_token, 'index'
+               FROM unnest($2::text[]) AS r(symbol)
+               JOIN app.instruments i ON i.exchange = split_part(r.symbol, ':', 1)
+                                     AND i.tradingsymbol = split_part(r.symbol, ':', 2)
+               WHERE NOT EXISTS (SELECT 1 FROM app.universe u WHERE u.symbol = r.symbol)
+           ) members
+           WHERE $1::text[] IS NULL OR symbol = ANY($1)
+           ORDER BY kind DESC, symbol""",
+        symbols,
+        list(REFERENCE_INDEX_SYMBOLS) if include_reference_indices else [],
+    )
+    return [UniverseMember(row["symbol"], row["instrument_token"], row["kind"]) for row in rows]
 
 
 async def replace_instruments(conn: Any, instruments: list[Instrument], now: datetime) -> int:

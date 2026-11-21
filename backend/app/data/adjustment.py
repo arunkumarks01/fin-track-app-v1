@@ -36,6 +36,7 @@ Every remaining step is attributed to NSE actions:
 
 from __future__ import annotations
 
+import asyncio
 import bisect
 import itertools
 import logging
@@ -447,6 +448,11 @@ def analyse(days: Sequence[DayObs], actions: Sequence[Action], tol: Tol) -> Anal
     """Pure: measured affine maps, windows, blips and classified events for ONE equity."""
     days = sorted(days, key=lambda o: o.d)
     ex_dates = sorted({x.ex_date for x in actions})
+    day_dates = [o.d for o in days]
+
+    def between(lo: date, hi: date) -> list[DayObs]:
+        """Every observation with lo <= d <= hi (days are sorted: two bisects, not a scan)."""
+        return days[bisect.bisect_left(day_dates, lo) : bisect.bisect_right(day_dates, hi)]
 
     def forced(d: date) -> int:
         return bisect.bisect_right(ex_dates, d)
@@ -496,7 +502,7 @@ def analyse(days: Sequence[DayObs], actions: Sequence[Action], tol: Tol) -> Anal
     # merge neighbours whose union still fits and whose 1m grain agrees (no real step)
     windows: list[_Seg] = []
     for s in segs:
-        s.g = _grain([o for o in days if s.first <= o.d <= s.last], tol)
+        s.g = _grain(between(s.first, s.last), tol)
         prev = windows[-1] if windows else None
         if prev is not None:
             union = minimax_fit(prev.pts + s.pts)
@@ -504,7 +510,7 @@ def analyse(days: Sequence[DayObs], actions: Sequence[Action], tol: Tol) -> Anal
             if ok(union, [*prev.members, *s.members]) and grain_ok:
                 prev.members.extend(s.members)
                 prev.fit = union
-                prev.g = _grain([o for o in days if prev.first <= o.d <= prev.last], tol)
+                prev.g = _grain(between(prev.first, prev.last), tol)
                 continue
         windows.append(s)
 
@@ -585,16 +591,41 @@ def analyse(days: Sequence[DayObs], actions: Sequence[Action], tol: Tol) -> Anal
     ]
     vm_norm = _median(all_vm)
 
+    # each window's span and volume factors, computed once (not once per day)
+    firsts = [w.first for w in windows]
+    lasts = [w.last for w in windows]
+    factors: dict[int, tuple[float | None, float | None]] = {}
+
+    def window_factors(k: int) -> tuple[float | None, float | None]:
+        if k not in factors:
+            w = windows[k]
+            v = _median(
+                [
+                    m.volume / m.nse.volume
+                    for m in w.members
+                    if m.nse and m.nse.volume > 0 and m.volume > 0
+                ]
+            )
+            vm = _median(
+                [
+                    x.minute.volume / x.volume
+                    for x in between(w.first, w.last)
+                    if x.minute and x.minute.volume > 0 and x.volume > 0
+                ]
+            )
+            factors[k] = (v, vm)
+        return factors[k]
+
     results: list[DayResult] = []
-    spans = [(w.first, w.last) for w in windows]
     for o in days:
-        k = next((j for j, (lo, hi) in enumerate(spans) if lo <= o.d <= hi), None)
+        # windows are disjoint and in time order: the last one starting on/before the day
+        j = bisect.bisect_right(firsts, o.d) - 1
+        k = j if j >= 0 and o.d <= lasts[j] else None
         if k is None:
-            prior = [j for j, (lo, _) in enumerate(spans) if lo <= o.d]
             results.append(
                 DayResult(
                     o.d,
-                    prior[-1] if prior else 0,
+                    j if j >= 0 else 0,
                     o.f,
                     None,
                     None,
@@ -607,21 +638,7 @@ def analyse(days: Sequence[DayObs], actions: Sequence[Action], tol: Tol) -> Anal
             )
             continue
         w = windows[k]
-        in_range = [x for x in days if w.first <= x.d <= w.last]
-        v = _median(
-            [
-                m.volume / m.nse.volume
-                for m in w.members
-                if m.nse and m.nse.volume > 0 and m.volume > 0
-            ]
-        )
-        vm = _median(
-            [
-                x.minute.volume / x.volume
-                for x in in_range
-                if x.minute and x.minute.volume > 0 and x.volume > 0
-            ]
-        )
+        v, vm = window_factors(k)
         if k in suspect:
             q = "suspect"
         elif underdetermined(w):
@@ -870,10 +887,14 @@ async def run_adjustment_analysis(
                WHERE ($1::text[] IS NULL OR symbol = ANY($1::text[])) ORDER BY symbol""",
             symbols,
         )
-    for m in members:
-        symbol = m["symbol"]
-        async with pool.acquire() as conn, conn.transaction():
-            if m["kind"] == "index":
+    # a few symbols at once (loading and storing are database-bound); the pure fit runs in a
+    # worker thread so the API stays responsive. Each symbol is still one transaction, and the
+    # first failure cancels the rest (TaskGroup) — fail closed, as before.
+    gate = asyncio.Semaphore(settings.adj_analysis_concurrency)
+
+    async def one(symbol: str, kind: str) -> None:
+        async with gate, pool.acquire() as conn, conn.transaction():
+            if kind == "index":
                 ds = [
                     r["d"]
                     for r in await conn.fetch(
@@ -884,9 +905,9 @@ async def run_adjustment_analysis(
                 ]
                 analysis = Analysis(index_days(ds), [])
             else:
-                analysis = analyse(
-                    await load_observations(conn, symbol), await load_actions(conn, symbol), tol
-                )
+                obs = await load_observations(conn, symbol)
+                acts = await load_actions(conn, symbol)
+                analysis = await asyncio.to_thread(analyse, obs, acts, tol)
             await store_analysis(conn, symbol, analysis, clock.now())
         report.symbols += 1
         report.days += len(analysis.days)
@@ -899,6 +920,10 @@ async def run_adjustment_analysis(
                 report.days_by_bound[key] = report.days_by_bound.get(key, 0) + 1
         if progress:
             progress(report)
+
+    async with asyncio.TaskGroup() as tg:
+        for m in members:
+            tg.create_task(one(m["symbol"], m["kind"]))
     async with pool.acquire() as conn, conn.transaction():
         report.pre_listing_bars = await flag_pre_listing(conn, settings, clock.now())
         report.sessions_judged = await refresh_session_status(conn, settings, clock.now())

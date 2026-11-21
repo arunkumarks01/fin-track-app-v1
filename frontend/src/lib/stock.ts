@@ -127,6 +127,24 @@ export type MinuteHealth = {
   unknown: number;
 };
 
+export type DeliveryDay = {
+  date: string;
+  series: string;
+  tradedQty: number;
+  deliverableQty: number;
+  delivBps: number;
+};
+
+export type Delivery = {
+  daysStored: number;
+  oldest: string | null;
+  newest: string | null;
+  window: number;
+  /** volume-weighted over the window, basis points; null with no data */
+  avgBps: number | null;
+  recent: DeliveryDay[];
+};
+
 export type Stock = {
   symbol: string;
   exchange: string;
@@ -151,6 +169,9 @@ export type Stock = {
   otherSecurityActions: number;
   unlistedSteps: UnlistedStep[];
   asTradedDays: Record<string, number>;
+  delivery: Delivery;
+  events: ReturnType<typeof stockEvents>;
+  marketCap: { date: string; series: string; issueSize: bigint; paisa: bigint } | null;
 };
 
 function kind(v: unknown): "equity" | "index" {
@@ -196,6 +217,81 @@ function minute(v: unknown): MinuteHealth | null {
     notTradedSessions: int(c.not_traded_sessions, "not_traded_sessions"),
     marketShort: int(c.market_short, "market_short"),
     unknown: int(c.unknown, "unknown"),
+  };
+}
+
+function delivery(v: unknown): Delivery {
+  const d = rec(v, "delivery");
+  return {
+    daysStored: int(d.days_stored, "days_stored"),
+    oldest: optIsoDate(d.oldest, "delivery.oldest"),
+    newest: optIsoDate(d.newest, "delivery.newest"),
+    window: int(d.window, "window"),
+    avgBps: optInt(d.avg_bps, "avg_bps"),
+    recent: arr(d.recent, "delivery.recent").map((x) => {
+      const r = rec(x, "delivery day");
+      const bps = int(r.deliv_bps, "deliv_bps");
+      if (bps < 0 || bps > 10_000) fail("deliv_bps out of range");
+      return {
+        date: isoDate(r.date, "delivery.date"),
+        series: str(r.series, "series"),
+        tradedQty: int(r.traded_qty, "traded_qty"),
+        deliverableQty: int(r.deliverable_qty, "deliverable_qty"),
+        delivBps: bps,
+      };
+    }),
+  };
+}
+
+function stockEvents(v: unknown) {
+  const events = rec(v, "events");
+  return {
+    deals: arr(events.deals, "events.deals").map((x) => {
+      const deal = rec(x, "deal");
+      if (deal.kind !== "bulk" && deal.kind !== "block") fail("deal.kind");
+      if (deal.side !== "BUY" && deal.side !== "SELL") fail("deal.side");
+      return {
+        date: isoDate(deal.date, "deal.date"),
+        kind: deal.kind,
+        client: str(deal.client, "deal.client"),
+        side: deal.side,
+        quantity: int(deal.quantity, "deal.quantity"),
+        pricePaisa: int(deal.price_paisa, "deal.price_paisa"),
+        priceExact: bool(deal.price_exact, "deal.price_exact"),
+        remarks: optStr(deal.remarks, "deal.remarks"),
+      };
+    }),
+    announcements: arr(events.announcements, "events.announcements").map((x) => {
+      const a = rec(x, "announcement");
+      return {
+        date: isoDate(a.date, "announcement.date"),
+        category: optStr(a.category, "announcement.category"),
+        body: str(a.body, "announcement.body"),
+      };
+    }),
+    boardMeetings: arr(events.board_meetings, "events.board_meetings").map((x) => {
+      const meeting = rec(x, "board meeting");
+      return {
+        date: isoDate(meeting.date, "meeting.date"),
+        purpose: str(meeting.purpose, "meeting.purpose"),
+        isResults: bool(meeting.is_results, "meeting.is_results"),
+        firstSeen: isoDate(meeting.first_seen, "meeting.first_seen"),
+      };
+    }),
+  };
+}
+
+function marketCap(v: unknown): Stock["marketCap"] {
+  if (v === null) return null;
+  const record = rec(v, "market_cap");
+  const issueSize = str(record.issue_size, "issue_size");
+  const paisa = str(record.market_cap_paisa, "market_cap_paisa");
+  if (!/^[1-9]\d*$/.test(issueSize) || !/^[1-9]\d*$/.test(paisa)) fail("market_cap amounts");
+  return {
+    date: isoDate(record.date, "market_cap.date"),
+    series: str(record.series, "market_cap.series"),
+    issueSize: BigInt(issueSize),
+    paisa: BigInt(paisa),
   };
 }
 
@@ -265,6 +361,9 @@ export function parseStock(body: unknown): Stock {
       };
     }),
     asTradedDays: counts(b.as_traded_days, "as_traded_days"),
+    delivery: delivery(b.delivery),
+    events: stockEvents(b.events),
+    marketCap: marketCap(b.market_cap),
   };
 }
 

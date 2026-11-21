@@ -13,12 +13,22 @@ from app.broker.kite.client import KiteAuthError, KiteUnavailableError
 from app.core.config import Settings
 from app.core.tradingdate import MARKET_TZ
 from app.data import extract_intraday
+from app.data.extract_daily import run_daily_backfill
 from app.data.extract_intraday import run_intraday_backfill
-from app.data.instruments import UniverseMember, sync_universe
+from app.data.instruments import (
+    GIFT_NIFTY_SYMBOL,
+    INDIA_VIX_SYMBOL,
+    UniverseMember,
+    parse_instruments_csv,
+    replace_instruments,
+    sync_universe,
+)
+from app.data.reference_report import reference_counts
 from app.db.migrate import migrate
 from tests.conftest import build_settings
 from tests.fixtures.clock import FrozenClock
 from tests.fixtures.historical import FakeHistorical
+from tests.fixtures.instruments import instruments_csv
 from tests.fixtures.minutes import session, weekdays
 
 pytestmark = pytest.mark.db
@@ -72,6 +82,55 @@ async def _rows(db: Any, symbol: str) -> int:
             symbol,
         )
     )
+
+
+async def test_reference_indices_use_their_own_finality_outside_the_stock_universe(
+    pool: Any, db: Any, test_dsn: str
+) -> None:
+    symbol, token = GIFT_NIFTY_SYMBOL, 291849
+    vix_token = 264969
+    master = instruments_csv(
+        "291849,1140,GIFT NIFTY,GIFT NIFTY,0,,,0,0,EQ,INDICES,NSEIX",
+        "264969,1035,INDIA VIX,INDIA VIX,0,,,0,0,EQ,INDICES,NSE",
+    )
+    await replace_instruments(db, parse_instruments_csv(master), EVENING)
+    prior = date(2026, 11, 17)
+    cfg = settings_for(
+        test_dsn,
+        ingest_daily_start=prior,
+        intraday_floor_date=prior,
+        kite_window_days={"day": 30, "minute": 10},
+    )
+    clock = FrozenClock(EVENING)
+    daily = FakeHistorical(
+        {token: session(prior, start=time.min, minutes=1) + session(END, start=time.min, minutes=1)}
+    )
+    minute = FakeHistorical(
+        {
+            token: session(prior, start=time(22), minutes=2)
+            + session(END, start=time(16), minutes=2),
+            vix_token: session(END, minutes=3),
+        }
+    )
+    await run_daily_backfill(pool, daily, cfg, clock, [symbol], include_reference_indices=True)
+    await run_intraday_backfill(
+        pool, minute, cfg, clock, [symbol, INDIA_VIX_SYMBOL], include_reference_indices=True
+    )
+
+    [daily_call] = daily.calls
+    assert (daily_call[0], daily_call[3].date()) == (token, prior)
+    assert {call[0]: call[3].date() for call in minute.calls} == {token: prior, vix_token: END}
+    assert not await db.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM app.universe WHERE symbol = ANY($1::text[]))",
+        [symbol, INDIA_VIX_SYMBOL],
+    )
+    counts = await reference_counts(db, END)
+    coverage = counts["gift_nifty"]
+    assert coverage["daily_bars"] == 1
+    assert coverage["daily_date"] == prior.isoformat()
+    assert coverage["minute_bars"] == 2
+    assert datetime.fromisoformat(coverage["minute_at"]).astimezone(IST).hour == 22
+    assert counts["india_vix"]["minute_bars"] == 3
 
 
 async def test_newest_first_rounds_then_idempotent(pool: Any, db: Any, test_dsn: str) -> None:

@@ -169,6 +169,49 @@ class Settings(BaseSettings):
     nse_archive_retry_backoff_seconds: float = Field(default=2.0, ge=0)
     nse_archive_max_zip_mb: float = Field(default=20.0, gt=0)  # largest seen: 0.66 MB
     nse_archive_max_member_mb: float = Field(default=20.0, gt=0)  # zip-bomb guard
+    # --- Phase 1e reference data (DEC-1E-SOURCES) from the same NSE archive host ---
+    # delivery position: <base>/MTO_ddmmyyyy.DAT; participant OI/volume: <base>/fao_participant_*
+    nse_mto_base_url: str = "https://nsearchives.nseindia.com/archives/equities/mto"
+    nse_participant_base_url: str = "https://nsearchives.nseindia.com/content/nsccl"
+    # --- news headlines (publisher RSS; headline, link, summary only) ---
+    news_feeds: dict[str, str] = Field(
+        default_factory=lambda: {
+            "business_standard_markets": "https://www.business-standard.com/rss/markets-106.rss",
+            "mint_markets": "https://www.livemint.com/rss/markets",
+            "et_markets": "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
+            "rbi_press": "https://www.rbi.org.in/pressreleases_rss.xml",
+            "sebi": "https://www.sebi.gov.in/sebirss.xml",
+        }
+    )
+    news_fetch_cron: str = "7,22,37,52 * * * *"  # IST, every 15 minutes
+    news_user_agent: str = "FinTrack/0.1 (personal research)"
+    news_timeout_seconds: float = Field(default=20.0, gt=0)
+    news_max_bytes: int = Field(default=2_000_000, gt=0)
+    news_max_items_per_feed: int = Field(default=200, ge=1)
+    # --- FRED (St. Louis Fed) daily series; off until FRED_API_KEY is set (user-created) ---
+    fred_api_key: SecretStr | None = None
+    fred_base_url: str = "https://api.stlouisfed.org/fred"
+    fred_start: date = date(2015, 1, 1)
+    # series id → (title, unit, scale): value stored as value * 10^scale, exact or rejected
+    fred_series: dict[str, tuple[str, str, int]] = Field(
+        default_factory=lambda: {
+            "SP500": ("S&P 500", "index points", 2),
+            "NASDAQCOM": ("NASDAQ Composite", "index points", 2),
+            "DJIA": ("Dow Jones Industrial Average", "index points", 2),
+            "VIXCLS": ("CBOE VIX", "index points", 2),
+            "DCOILBRENTEU": ("Brent crude", "USD per barrel", 2),
+            "DGS10": ("US 10-year Treasury yield", "percent", 2),
+            "DEXINUS": ("INR per USD (noon buying rate)", "INR", 4),
+        }
+    )
+    # bulk.csv / block.csv: the latest session only (captured forward)
+    nse_deals_base_url: str = "https://nsearchives.nseindia.com/content/equities"
+    # after each daily run (and its NSE archive load), fetch the new days' reference files too
+    reference_after_daily: bool = True
+    # NSE's participant OI files are often off by 1-2 contracts between the participants' sum
+    # and its own TOTAL (rounding; measured 2026-11-21). Within this, stored as given and the gap
+    # recorded; beyond it, the day is refused.
+    participant_total_tolerance_contracts: int = Field(default=2, ge=0, le=100)
     # a day's Kite price agrees with NSE * factor within this many paisa (both sides rounded)
     adj_tolerance_paisa: float = Field(default=2.5, gt=0)  # half a 5-paisa tick
     # windows with fewer measured days are under-determined: flagged, no as-traded derived
@@ -183,6 +226,8 @@ class Settings(BaseSettings):
     adj_unexplained_small: float = Field(default=0.03, gt=0, lt=0.5)
     # DEC-CORROB: an unlisted step is 'corroborated' only at a clean ratio p/q with p, q ≤ this
     adj_corroborate_max_term: int = Field(default=10, ge=2, le=50)
+    # symbols measured at once (each its own DB connection + transaction); keep below the pool size
+    adj_analysis_concurrency: int = Field(default=4, ge=1, le=16)
     # the Admin review list shows unexplained steps of at least this size (fraction); smaller
     # ones are refit noise — counted, still on each symbol's page (measured: median 0.03%)
     adj_review_min_step: float = Field(default=0.0025, gt=0, lt=0.5)
@@ -215,7 +260,9 @@ class Settings(BaseSettings):
             raise ValueError("PAPER_MODE must be true — live trading is gated behind Phase 10")
         return True
 
-    @field_validator("ticks_retention_cron", "daily_ingest_cron", "intraday_ingest_cron")
+    @field_validator(
+        "ticks_retention_cron", "daily_ingest_cron", "intraday_ingest_cron", "news_fetch_cron"
+    )
     @classmethod
     def _valid_cron(cls, value: str) -> str:
         from apscheduler.triggers.cron import CronTrigger
@@ -242,6 +289,11 @@ class Settings(BaseSettings):
     def _pool_bounds(self) -> Settings:
         if self.db_pool_max_size < self.db_pool_min_size:
             raise ValueError("DB_POOL_MAX_SIZE must be >= DB_POOL_MIN_SIZE")
+        if self.adj_analysis_concurrency >= self.db_pool_max_size:
+            raise ValueError(
+                "ADJ_ANALYSIS_CONCURRENCY must be below DB_POOL_MAX_SIZE "
+                "(pages need connections too)"
+            )
         return self
 
     @field_validator("universe_index_symbols")
@@ -259,7 +311,7 @@ class Settings(BaseSettings):
     def secret_values(self) -> list[str]:
         """Raw secret strings, registered with the log masker."""
         values = [self.api_auth_token.get_secret_value(), self.database_url.get_secret_value()]
-        for s in (self.kite_api_key, self.kite_api_secret):
+        for s in (self.kite_api_key, self.kite_api_secret, self.fred_api_key):
             if s is not None:
                 values.append(s.get_secret_value())
         return values

@@ -81,6 +81,51 @@ const BODY = {
     },
   ],
   as_traded_days: { measured: 2939, carried: 1 },
+  market_cap: {
+    date: "2026-11-20",
+    series: "EQ",
+    issue_size: "13532538722",
+    market_cap_paisa: "1864107208955500",
+  },
+  events: {
+    deals: [
+      {
+        date: "2026-11-20",
+        kind: "bulk",
+        client: "Example Fund",
+        side: "BUY",
+        quantity: 500000,
+        price_paisa: 129016,
+        price_exact: false,
+        remarks: null,
+      },
+    ],
+    announcements: [{ date: "2026-11-20", category: null, body: "Results declared" }],
+    board_meetings: [
+      {
+        date: "2027-01-15",
+        purpose: "Financial results",
+        is_results: true,
+        first_seen: "2026-11-20",
+      },
+    ],
+  },
+  delivery: {
+    days_stored: 2941,
+    oldest: "2015-01-01",
+    newest: "2026-11-20",
+    window: 1,
+    avg_bps: 5253,
+    recent: [
+      {
+        date: "2026-11-20",
+        series: "EQ",
+        traded_qty: 4785257,
+        deliverable_qty: 2513771,
+        deliv_bps: 5253,
+      },
+    ],
+  },
 };
 
 describe("parseStock", () => {
@@ -97,6 +142,11 @@ describe("parseStock", () => {
     expect(s.minute.coverage?.completePct).toBe(99.97);
     expect(s.actions[0]).toMatchObject({ kite: "no_change", dividendPaisa: 650 });
     expect(s.unlistedSteps[0]).toMatchObject({ cls: "corroborated", magnitude: null });
+    expect(s.delivery).toMatchObject({ daysStored: 2941, avgBps: 5253 });
+    expect(s.delivery.recent[0]?.deliverableQty).toBe(2513771);
+    expect(s.marketCap?.paisa).toBe(1864107208955500n);
+    expect(s.events.deals[0]).toMatchObject({ pricePaisa: 129016, priceExact: false });
+    expect(s.events.boardMeetings[0]).toMatchObject({ isResults: true, firstSeen: "2026-11-20" });
   });
 
   it("accepts absent coverage and no futures (an index)", () => {
@@ -105,12 +155,21 @@ describe("parseStock", () => {
       kind: "index",
       futures: null,
       tick_size_paisa: null,
+      market_cap: null,
       minute: { ...BODY.minute, coverage: null },
       daily: { ...BODY.daily, coverage: null },
     });
     expect(s.futures).toBeNull();
+    expect(s.marketCap).toBeNull();
     expect(s.minute.coverage).toBeNull();
     expect(s.daily.coverage).toBeNull();
+  });
+
+  it("rejects a delivery percentage outside 0-100%", () => {
+    const recent = [{ ...BODY.delivery.recent[0], deliv_bps: 10_001 }];
+    expect(() => parseStock({ ...BODY, delivery: { ...BODY.delivery, recent } })).toThrow(
+      StockContractError,
+    );
   });
 
   it("rejects an unknown Kite status instead of guessing", () => {

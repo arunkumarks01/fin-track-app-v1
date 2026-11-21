@@ -32,7 +32,12 @@ from app.core.clock import Clock
 from app.core.config import Settings
 from app.core.tradingdate import MARKET_TZ, trading_date_of
 from app.data.drift import proportional_ratio, record_check, record_drift
-from app.data.extract_daily import HistoricalSource, last_completed_session
+from app.data.extract_daily import (
+    HistoricalSource,
+    last_completed_session,
+    last_final_daily_session,
+)
+from app.data.instruments import GIFT_NIFTY_SYMBOL, historical_members
 from app.data.intraday import TIMEFRAME, MinuteBar, ensure_sids, validate_minute
 from app.data.session_calendar import refresh_session_status
 from app.data.validate import Rejected
@@ -105,14 +110,11 @@ async def _check_budget(conn: Any, report: IntradayReport, settings: Settings) -
         )
 
 
-async def _load_members(conn: Any, symbols: list[str] | None) -> list[Member]:
-    rows = await conn.fetch(
-        """SELECT symbol, instrument_token FROM app.universe
-           WHERE active AND ($1::text[] IS NULL OR symbol = ANY($1))
-           ORDER BY kind DESC, symbol""",
-        symbols,
-    )
-    sids = await ensure_sids(conn, [r["symbol"] for r in rows])
+async def _load_members(
+    conn: Any, symbols: list[str] | None, include_reference_indices: bool
+) -> list[Member]:
+    instruments = await historical_members(conn, symbols, include_reference_indices)
+    sids = await ensure_sids(conn, [i.symbol for i in instruments])
     cursors = {
         r["sid"]: r
         for r in await conn.fetch(
@@ -121,13 +123,13 @@ async def _load_members(conn: Any, symbols: list[str] | None) -> list[Member]:
         )
     }
     members = []
-    for r in rows:
-        sid = sids[r["symbol"]]
+    for instrument in instruments:
+        sid = sids[instrument.symbol]
         c = cursors.get(sid)
         members.append(
             Member(
-                r["symbol"],
-                r["instrument_token"],
+                instrument.symbol,
+                instrument.instrument_token,
                 sid,
                 newest=c["newest_ts"] if c else None,
                 oldest=c["oldest_date"] if c else None,
@@ -328,14 +330,18 @@ async def run_intraday_backfill(
     clock: Clock,
     symbols: list[str] | None = None,
     progress: Progress | None = None,
+    *,
+    include_reference_indices: bool = False,
 ) -> IntradayReport:
     report = IntradayReport(started_at=clock.now(), budget_gb=settings.intraday_db_budget_gb)
     window_days = settings.kite_window_days[KITE_INTERVAL]
-    end = last_completed_session(clock.now(), settings.intraday_final_after_ist)
+    now = clock.now()
+    end = last_completed_session(now, settings.intraday_final_after_ist)
+    gift_end = last_final_daily_session(now, settings.daily_bar_final_next_day_ist)
     floor = settings.intraday_floor_date
 
     async with pool.acquire() as conn:
-        members = await _load_members(conn, symbols)
+        members = await _load_members(conn, symbols, include_reference_indices)
         if not members:
             report.stopped_reason = "universe is empty — refresh the universe first"
             return report
@@ -345,6 +351,10 @@ async def run_intraday_backfill(
         report.deepest_common_date = max(live) if live else None
         if progress:
             progress(report)
+
+    def final_day(m: Member) -> date:
+        # GIFT Nifty trades after the NSE cash close. Catch up only after overnight finality.
+        return gift_end if m.symbol == GIFT_NIFTY_SYMBOL else end
 
     async def window(
         m: Member, w_start: date, w_end: date, backward: bool, check: date | None = None
@@ -406,8 +416,9 @@ async def run_intraday_backfill(
             # start ON the newest stored session: re-fetching it is the drift re-check
             check = trading_date_of(m.newest, MARKET_TZ)
             cursor = check
-            while cursor <= end and not m.failed and not stop:
-                upto = min(cursor + timedelta(days=window_days - 1), end)
+            last = final_day(m)
+            while cursor <= last and not m.failed and not stop:
+                upto = min(cursor + timedelta(days=window_days - 1), last)
                 await guarded(m, cursor, upto, False, check if cursor == check else None)
                 cursor = upto + timedelta(days=1)
 
@@ -424,7 +435,7 @@ async def run_intraday_backfill(
                 await _check_budget(conn, report, settings)
             batch = []
             for m in todo:
-                w_end = (m.oldest - timedelta(days=1)) if m.oldest else end
+                w_end = (m.oldest - timedelta(days=1)) if m.oldest else final_day(m)
                 if w_end < floor:
                     m.floored = True
                     continue

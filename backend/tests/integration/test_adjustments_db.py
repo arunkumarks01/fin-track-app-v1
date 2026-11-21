@@ -90,6 +90,8 @@ def _archive(missing: set[date]) -> tuple[httpx.MockTransport, list[str]]:
     def handler(req: httpx.Request) -> httpx.Response:
         if req.url.path.endswith("symbolchange.csv"):
             return httpx.Response(200, content=CHANGES.encode())
+        if "/PR" not in req.url.path:  # other archive files (1e reference data): none here
+            return httpx.Response(404)
         seen.append(req.url.path)
         d = datetime.strptime(req.url.path.rsplit("/PR", 1)[1][:6], "%d%m%y").date()  # noqa: DTZ007
         if d in missing or d not in RAW:
@@ -437,6 +439,9 @@ async def test_daily_job_loads_archive_and_measures_after_backfill(
     assert state.result["nse"]["ok"] == 6
     assert state.result["adjustments"]["events"] == {"explained": 1}
     assert await db.fetchval("SELECT count(*) FROM app.nse_bhav") == 6
+    # The PR zips exist without market cap. The other three dated files and deal files are absent.
+    assert state.result["reference"]["ok"] == 6
+    assert state.result["reference"]["missing"] == 4 * 6 + 2
 
 
 # --- audited archive-day reset: purge + single re-fetch; mislabeled zip → accepted gap -------

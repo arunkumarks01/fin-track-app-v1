@@ -13,6 +13,7 @@ const JOB_NAMES: Record<string, string> = {
   nse_archive_ingest: "NSE archive + adjustments",
   adjustment_analysis: "Adjustment analysis",
   repair_provisional: "Provisional-bar repair",
+  reference_ingest: "Delivery % + F&O positions (NSE)",
 };
 
 const STATUS: Record<JobRun["status"], { text: string; className: string }> = {

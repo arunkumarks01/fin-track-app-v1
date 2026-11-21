@@ -52,7 +52,7 @@ def test_dsn() -> str:
 
 @pytest.fixture
 def db_settings(test_dsn: str) -> Settings:
-    return build_settings(database_url=test_dsn, db_pool_max_size=2)
+    return build_settings(database_url=test_dsn, db_pool_max_size=2, adj_analysis_concurrency=1)
 
 
 async def reset_schema(conn: Any) -> None:

@@ -74,6 +74,7 @@ async def test_overview_reports_jobs_quarantine_flags_and_cursor_errors(
     assert [j["id"] for j in sched["jobs"]] == [
         "daily_ingest",
         "intraday_ingest",
+        "news_fetch",
         "ticks_retention_cleanup",
     ]
     assert all(j["next_run_at"] and j["trigger"].startswith("cron") for j in sched["jobs"])

@@ -1,5 +1,91 @@
 # Changelog
 
+## [Unreleased] — NSE market cap and historical participant files (2026-11-21)
+
+- Migration 0012 stores NSE's published equity market cap in integer paisa and the issue size
+  in shares. The loader scans from the exchange's first publication date, February 1, 2024.
+  Market cap and PR text share the same archive download and have independent coverage rows.
+  Stock shows the latest figure with its date and series. The API carries bigint values as
+  decimal strings so the browser can display them without losing precision.
+- Historical participant titles can put the year immediately after the comma. Verified the
+  format in the May 2, 2025 NSE reports and added a regression test. Previously errored files
+  are retried by the existing ledger rule.
+- Added GIFT Nifty and India VIX daily and native minute history using the existing Kite extractors, outside
+  the NSE stock universe. Its minute catch-up waits for overnight finality, with coverage visible
+  in Admin. MCX commodities are paused at the user's request.
+- Updated the Admin integration test to include the scheduled RSS job.
+
+## [Unreleased] — Slice 1e deals, PR text, news, calendar and FRED (2026-11-21)
+
+- Migration 0011 adds deal, announcement, board-meeting, news, calendar and macro storage.
+  The NSE ledger records missed deal sessions after capture begins. Board meetings retain the
+  earliest date they appeared in the archive, regardless of download order.
+- News ingestion reads publisher RSS and Atom with pinned `defusedxml`, observes feed TTLs and
+  stops retrying on a refusal. News and FRED each have an independent ingestion lock. The
+  daily follow-up uses the same lock as a manual FRED run.
+- FRED stores exactly representable scaled integers and reads the two latest observations with
+  their source status. It requires `FRED_API_KEY`. Calendar import rejects malformed CSV and
+  invalid encoding before any writes and counts the rows inserted by that request.
+- Stock shows stored announcements, meetings and results dates, and bulk/block deals with
+  rounded prices labelled. Admin shows the expanded NSE ledger and coverage counts for the
+  calendar, RSS, and FRED.
+- The full adjustment fit avoids repeated scans and runs with bounded per-symbol concurrency.
+  The handoff benchmark reported identical output on 218 stocks and a drop from 269 s to 45 s.
+  The fit still recomputes the full history.
+- Added integration coverage for feed refusal, TTL and deduplication, incremental FRED fetching,
+  the macro read contract, and authenticated, atomic, idempotent calendar import.
+
+## [Unreleased] — Slice 1e step 1: delivery % and FII/DII F&O positions (2026-11-21)
+
+Built per DEC-1E-SOURCES step 1. Both from NSE's public archive, 2015 onwards, using the same honest client and
+refusal rules as the 1c archive load.
+
+### Data
+- **Delivery %** (`MTO_ddmmyyyy.DAT`) → `app.delivery_daily`:
+  - universe shares only (series EQ, then BE, then BZ); a company's bonds in the same file are skipped;
+  - old names are mapped per day (e.g. SRTRANSFIN → SHRIRAMFIN);
+  - % is computed exactly from the two quantities (integer basis points) and checked against NSE's printed %;
+    a row that disagrees, or has more delivered than traded, is rejected.
+- **F&O positions by participant** (`fao_participant_oi/vol_ddmmyyyy.csv`) → `app.participant_positions`:
+  - Client, DII, FII and Pro, 14 counts each, open interest and volume;
+  - every row's long/short totals must equal its legs, and the four rows must equal NSE's TOTAL row.
+- **NSE's own rounding:** NSE's open-interest files are often off by 1–2 contracts between the rows and the TOTAL.
+  - Measured on 40 random days: 16 OI files off by ≤2; volume files exact. In recent months it's ~90% of days.
+  - Those days are stored as given, and the gap is written to the ledger and counted on Admin.
+  - A gap above `PARTICIPANT_TOTAL_TOLERANCE_CONTRACTS` (default 2) refuses the day.
+- **Ledger and rules:** one ledger row per dataset and day (`app.reference_files`, migration 0010).
+  - Newest first, one transaction per file.
+  - 404 → gap, a mislabelled file → gap, unreadable → error (retried), 403 → the whole load stops.
+  - Resumable; runs after each daily job (`REFERENCE_AFTER_DAILY`) and on demand at
+    `POST /api/data/ingest/reference`.
+- `NseArchiveClient.fetch_file()` is the one fetch path for all archive files (PR zips use it too).
+
+### Screens
+- **Stock page:** a Delivery % card with the volume-weighted average over the last 20 days, the latest day's
+  quantities, and a bar chart.
+- **Dashboard:** "F&O positions by participant", with net index futures (and change vs the day before), the long
+  share, and net stock futures and index options, in contracts, labelled not live.
+- **Admin:** a "Reference data from NSE" table: days loaded, range, gaps, errors, rejected rows, rounding days.
+
+### Fixed
+- The Data foundation panel read any running job's progress as the 1-minute download's, and errored while any other
+  job ran (archive load, re-measure, and now 1e). It now reads that progress only for the 1-minute job; a test
+  pins it.
+
+### Tests
+- 9 parser tests on verbatim real files (2015 and 2026, including NSE's off-by-one TOTAL).
+- 4 DB tests: three datasets, resume, gap, mislabelled, bad total, refusal, missing name map, endpoints.
+- 7 new frontend tests.
+
+## [Unreleased] — Sidebar: same text size as the page, visible collapse that persists (2026-11-21)
+
+- Sidebar text now matches the main screen: 16px menu items, 14px section labels and footer, 18px icons
+  (was 14/12/16).
+- A visible **Collapse menu / Expand menu** button at the bottom of the sidebar (also: the top-bar button,
+  Ctrl/⌘+B, the sidebar edge). The state is saved in the `sidebar_state` cookie and read by the root layout, so a
+  collapsed menu stays collapsed after a reload. Pages are now server-rendered on request (they read that cookie).
+- Next.js's dev-only badge moved to bottom-right so it no longer covers the collapse button.
+
 ## [Unreleased] — New look: shadcn/ui app shell, light + dark, Dashboard (DEC-UI) (2026-11-21)
 
 - **UI kit:** shadcn/ui components copied into `frontend/src/components/ui/` (sidebar, card, badge, button, chart,

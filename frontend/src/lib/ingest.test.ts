@@ -100,10 +100,26 @@ describe("parseJobs intraday", () => {
     });
   });
 
+  it("ignores another job's live progress instead of failing", () => {
+    const reference = {
+      ...RUNNING,
+      last: {
+        ...RUNNING.last,
+        name: "reference_ingest",
+        result: { progress: { todo: { mto: 3 }, done: 1, ok: 1, inserted: 64 } },
+      },
+    };
+    expect(parseJobs(reference)).toMatchObject({ name: "reference_ingest", intraday: null });
+  });
+
   it("rejects a malformed progress block", () => {
     const bad = {
       busy: true,
-      last: { ...RUNNING.last, result: { progress: { rounds: "three", budget_gb: 35 } } },
+      last: {
+        ...RUNNING.last,
+        name: "intraday_ingest",
+        result: { progress: { rounds: "three", budget_gb: 35 } },
+      },
     };
     expect(() => parseJobs(bad)).toThrow(IngestContractError);
   });

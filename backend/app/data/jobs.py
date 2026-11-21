@@ -19,6 +19,7 @@ from app.core.config import Settings
 from app.data.adjustment import AnalysisReport, run_adjustment_analysis
 from app.data.extract_daily import RunReport, last_final_daily_session, run_daily_backfill
 from app.data.extract_intraday import IntradayReport, run_intraday_backfill
+from app.data.fred import fetch_fred
 from app.data.instruments import (
     InstrumentsError,
     build_universe,
@@ -26,8 +27,10 @@ from app.data.instruments import (
     replace_instruments,
     sync_universe,
 )
+from app.data.news import fetch_news
 from app.data.nse_archive import NseArchiveClient, NseArchiveError
 from app.data.nse_load import NseLoadReport, run_nse_archive_load
+from app.data.reference_load import ReferenceReport, run_reference_load
 from app.data.repair import repair_provisional_daily
 
 log = logging.getLogger(__name__)
@@ -82,6 +85,9 @@ class IngestRunner:
         self._s = settings
         self._clock = clock
         self._lock = asyncio.Lock()
+        # Quick jobs run independently of long downloads and of each other.
+        self._news_lock = asyncio.Lock()
+        self._fred_lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
         self.last = JobState("none")
         # newest first; in memory only, so it starts empty after a restart (the Admin page says so)
@@ -111,7 +117,13 @@ class IngestRunner:
         self, symbols: list[str] | None = None, reset: bool = False
     ) -> RunReport:
         return await run_daily_backfill(
-            self._pool, self._require_client(), self._s, self._clock, symbols, reset=reset
+            self._pool,
+            self._require_client(),
+            self._s,
+            self._clock,
+            symbols,
+            reset=reset,
+            include_reference_indices=True,
         )
 
     async def _run(self, name: str, work: Callable[[], Awaitable[dict[str, Any]]]) -> JobState:
@@ -133,6 +145,45 @@ class IngestRunner:
                 state.finished_at = self._clock.now()
         return state
 
+    async def _run_light(
+        self, name: str, lock: asyncio.Lock, work: Callable[[], Awaitable[dict[str, Any]]]
+    ) -> JobState:
+        state = JobState(name, "running", started_at=self._clock.now())
+        self.history.appendleft(state)
+        if lock.locked():
+            state.status, state.error = "failed", f"{name}: already running"
+            state.finished_at = self._clock.now()
+            return state
+        async with lock:
+            try:
+                state.result = await work()
+                state.status = "failed" if state.result.get("stopped_reason") else "ok"
+                state.error = state.result.get("stopped_reason")
+            except Exception as exc:  # never let a job kill the process silently
+                state.status, state.error = "failed", f"{type(exc).__name__}: {exc}"
+                log.exception("job %s crashed", name)
+            finally:
+                state.finished_at = self._clock.now()
+        return state
+
+    async def news_fetch(self) -> JobState:
+        async def work() -> dict[str, Any]:
+            if self._http is None:
+                return {"stopped_reason": "no HTTP client configured"}
+            report = await fetch_news(self._pool, self._http, self._s, self._clock)
+            return report.totals()
+
+        return await self._run_light("news_fetch", self._news_lock, work)
+
+    async def fred_fetch(self) -> JobState:
+        async def work() -> dict[str, Any]:
+            if self._http is None:
+                return {"stopped_reason": "no HTTP client configured"}
+            report = await fetch_fred(self._pool, self._http, self._s, self._clock)
+            return {**report.totals(), "stopped_reason": report.stopped_reason}
+
+        return await self._run_light("fred_fetch", self._fred_lock, work)
+
     async def daily_ingest(
         self, symbols: list[str] | None = None, refresh: bool = True, reset: bool = False
     ) -> JobState:
@@ -151,6 +202,13 @@ class IngestRunner:
                 after = await self._nse_and_analysis(self.last)
                 out.update({k: v for k, v in after.items() if k != "stopped_reason"})
                 out["stopped_reason"] = after["stopped_reason"]
+                if out["stopped_reason"] is None and self._s.reference_after_daily:
+                    # Phase 1e: NSE's dated files and the latest deal files
+                    ref = await self._reference(self.last)
+                    out["reference"] = ref.totals()
+                    out["stopped_reason"] = ref.stopped_reason
+            if report.stopped_reason is None and self._s.fred_api_key is not None:
+                out["fred"] = (await self.fred_fetch()).to_dict()
             out["errors"] = [
                 {"symbol": r.symbol, "error": r.error} for r in report.results if r.error
             ][:50]
@@ -173,7 +231,13 @@ class IngestRunner:
                 attempt += 1
                 try:
                     report = await run_intraday_backfill(
-                        self._pool, client, self._s, self._clock, symbols, progress
+                        self._pool,
+                        client,
+                        self._s,
+                        self._clock,
+                        symbols,
+                        progress,
+                        include_reference_indices=True,
                     )
                     break
                 except DB_LOST as exc:
@@ -242,6 +306,38 @@ class IngestRunner:
             return await self._nse_and_analysis(self.last, retry_missing)
 
         return await self._run("nse_archive_ingest", work)
+
+    # --- Phase 1e: reference data from the NSE archive --------------------------------------
+
+    async def _reference(
+        self,
+        state: JobState,
+        datasets: list[str] | None = None,
+        retry_missing: bool = False,
+    ) -> ReferenceReport:
+        def progress(r: ReferenceReport) -> None:
+            state.result = {**state.result, "progress": r.totals()}
+
+        last_final = last_final_daily_session(
+            self._clock.now(), self._s.daily_bar_final_next_day_ist
+        )
+        kwargs: dict[str, Any] = {"progress": progress, "retry_missing": retry_missing}
+        if datasets:
+            kwargs["datasets"] = datasets
+        return await run_reference_load(
+            self._pool, self._nse_client(), self._s, self._clock, last_final, **kwargs
+        )
+
+    async def reference_ingest(
+        self, datasets: list[str] | None = None, retry_missing: bool = False
+    ) -> JobState:
+        """Load the requested NSE reference datasets, resuming from their ledgers."""
+
+        async def work() -> dict[str, Any]:
+            report = await self._reference(self.last, datasets, retry_missing)
+            return {"reference": report.totals(), "stopped_reason": report.stopped_reason}
+
+        return await self._run("reference_ingest", work)
 
     async def adjustment_analysis(self, symbols: list[str] | None = None) -> JobState:
         async def work() -> dict[str, Any]:

@@ -29,6 +29,7 @@ from app.core.clock import Clock
 from app.core.config import Settings
 from app.core.tradingdate import MARKET_TZ, canonical_daily_ts, trading_date_of
 from app.data.drift import proportional_ratio, record_check, record_drift
+from app.data.instruments import historical_members
 from app.data.validate import Bar, PrevBar, Rejected, Validated, validate_daily
 
 log = logging.getLogger(__name__)
@@ -343,42 +344,38 @@ async def run_daily_backfill(
     symbols: list[str] | None = None,
     *,
     reset: bool = False,
+    include_reference_indices: bool = False,
 ) -> RunReport:
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """SELECT symbol, instrument_token, kind FROM app.universe
-               WHERE active AND ($1::text[] IS NULL OR symbol = ANY($1))
-               ORDER BY kind DESC, symbol""",
-            symbols,
-        )
+        members = await historical_members(conn, symbols, include_reference_indices)
         if reset:
             if symbols is None:
                 raise ValueError("reset requires an explicit symbol list")
-            unknown = sorted(set(symbols) - {r["symbol"] for r in rows})
+            unknown = sorted(set(symbols) - {member.symbol for member in members})
             if unknown:
                 raise ValueError(f"not active universe symbols: {unknown}")
             await reset_cursors(conn, symbols)
     report = RunReport(started_at=clock.now())
-    if not rows:
+    if not members:
         report.stopped_reason = "universe is empty — refresh the universe first"
         return report
-    for row in rows:
+    for member in members:
         try:
             report.results.append(
                 await ingest_symbol(
                     pool,
                     source,
-                    row["symbol"],
-                    row["instrument_token"],
+                    member.symbol,
+                    member.instrument_token,
                     settings,
                     clock,
-                    kind=row["kind"],
+                    kind=member.kind,
                 )
             )
         except KiteAuthError as exc:
-            report.results.append(SymbolResult(row["symbol"], "auth_stopped", error=str(exc)))
+            report.results.append(SymbolResult(member.symbol, "auth_stopped", error=str(exc)))
             report.stopped_reason = f"Kite session unavailable: {exc}"
-            log.error("daily backfill stopped at %s: %s", row["symbol"], exc)
+            log.error("daily backfill stopped at %s: %s", member.symbol, exc)
             break
     log.info("daily backfill: %s", report.totals())
     return report

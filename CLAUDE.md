@@ -10,16 +10,18 @@ The plan lives in `docs/` and is **authoritative**: `ARCHITECTURE.md` (laws + de
 `BUILD_PLAN.md` (phases + exit gates), `TEST_PLAN.md`, `UX_DESIGN.md`, `TOOLING.md`.
 Record every change in `docs/CHANGELOG.md`.
 
-**Current phase: 1 (data foundation), approved as a whole (DEC-P1), built in slices 1a→1e.**
+**Current phase: 1 (data foundation), approved as a whole (DEC-P1), built in slices 1a–1f.**
 Slices 1a (Kite auth, universe, daily extractor, validation, coverage gate), 1b (1-minute store +
 on-read derivation) and 1c (NSE archive, measured adjustments, drift re-check) are built.
-**The Phase-1 data-coverage gate was opened by the user on 2026-11-20 (DEC-GATE1).** The five 1d decisions are
-recorded as **provisional** (DEC-1D-*): `websockets` + `pyarrow`; Full-mode ticks, compact schema, short hot window,
+**The Phase-1 data-coverage gate was opened by the user on 2026-11-20 (DEC-GATE1).** The five 1d decisions were
+**locked on 2026-11-21** (DEC-1D-*): `websockets` + `pyarrow`; Full-mode ticks, compact schema, short hot window,
 fail-closed Parquet export; a narrow option chain; raw snapshots only (greeks in Phase 2); new slice 1f (F&O
-history from the archive). Tick sizing waits on a full-session probe; build 1d only after the user locks them. 1e (reference data) sources are
+history from the archive). Tick sizing waits on the full-session probe. 1e (reference data) sources are
 **approved 2026-11-21** (DEC-1E-SOURCES, `docs/PROPOSAL_1E_SOURCES.md`): FII/DII = derivatives positioning only,
-GIFT Nifty + FRED instead of US futures, fundamentals-lite, `defusedxml` approved; build in the proposal's order
-(Kite segments after Monday's history check; FRED waits for the user's `FRED_API_KEY`). Decided 2026-11-21:
+GIFT Nifty + FRED instead of US futures, fundamentals-lite, `defusedxml` approved. NSE deals, PR text, RSS,
+calendar import, market cap, GIFT Nifty and India VIX history, and FRED are implemented. The user
+paused MCX commodities. CDS requires an exact sub-paisa storage decision. Live FRED ingestion requires the user's
+`FRED_API_KEY`. Decided 2026-11-21:
 **DEC-2015** (intraday analysis starts `INTRADAY_ANALYSIS_START` = 2016-01-01; 2015 1m kept, opt-in, badged) and
 **DEC-CORROB** (below).
 
@@ -100,7 +102,7 @@ automatically, and any exemption (e.g. a future Telegram webhook) must be explic
 
 **Scheduler** (`app/core/scheduler.py`): `max_instances=1` + `coalesce=True` are fixed; add jobs
 only through `register_job()`, which refuses overrides. Timezone is IST. Jobs are registered in the
-`app/main.py` lifespan (currently just the ticks retention job).
+`app/main.py` lifespan (ticks retention, daily candles, intraday candles, and publisher RSS).
 
 **Logging** (`app/core/logging.py`): one root handler whose formatter masks registered secrets
 plus DSN passwords, bearer tokens and key=value credentials in the fully formatted record
@@ -179,6 +181,15 @@ injected `Clock` (`app/core/clock.py`). Never a source of truth.
   with a market-wide short-day floor; never a benchmark/percentile. Shortfalls are flagged, never quarantined.
   A session with no bars is `not_traded` (not missing) only for an equity NSE's archive says didn't trade that day.
 - 1d candles stay Kite-native (the official close is not the last 1m close).
+
+**Reference data (1e, DEC-1E-SOURCES)** — `app/data/nse_reference.py` (parsers), `reference_load.py` (loader),
+`reference_report.py`: delivery % (`app.delivery_daily`) and participant F&O positions (`app.participant_positions`)
+from NSE's archive, ledger `app.reference_files` (same rules as 1c: newest first, a 403 stops, a 404 or mislabelled file
+is a gap, never back-filled). Runs after the daily job and at `POST /api/data/ingest/reference`. NSE's participant-OI
+TOTAL is often off by 1-2 contracts: kept as given, the gap recorded, above `PARTICIPANT_TOTAL_TOLERANCE_CONTRACTS` refused.
+The ledger also covers forward-only bulk/block deals and PR-zip announcements and board meetings.
+Publisher RSS is scheduled independently and respects feed TTL and refusals. FRED runs after daily ingestion
+when configured, and the economic calendar accepts authenticated imports of reviewed CSVs with source links.
 
 **Stock page (DEC-STOCKPAGE)** — `app/data/stock.py`, `/api/data/stock`, frontend `/stocks`: read-only, one stock's
 names, share-series actions vs Kite's measured prices, data health — reusing the gate's own queries so no number differs

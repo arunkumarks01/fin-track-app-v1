@@ -28,8 +28,8 @@ format shown.
 | Bulk / block deals | NSE archive `content/equities/bulk.csv`, `block.csv` | ✅ verified | **current day only** → we capture forward from the first run | daily, after close |
 | Company announcements | NSE PR zip member `An*.txt` (already downloaded by 1c) | ✅ verified | **2015 →** | daily (end of day) |
 | Board meetings / results dates | NSE PR zip member `Bm*.txt` | ✅ verified | **2015 →** | daily |
-| Market cap / shares outstanding | NSE PR zip member `mcap*.csv` | ✅ verified | **recent only** (absent from every zip checked through 2023) | daily |
-| India VIX | **Kite** `NSE:INDIA VIX` (token 264969), existing daily + 1m extractors | ✅ in our instrument master | as Kite serves (indices → 2015 daily) | with the existing jobs |
+| Market cap / issue size | NSE PR zip member `mcap*.csv` | implemented | From **2024-02-01** per [NSE circular CMTR60423](https://nsearchives.nseindia.com/content/circulars/CMTR60423.pdf) | daily |
+| India VIX | **Kite** `NSE:INDIA VIX` (token 264969) | implemented via existing daily and minute extractors, outside the stock universe | as Kite serves | with the existing jobs |
 | GIFT Nifty | **Kite** `NSEIX:GIFT NIFTY` (token 291849) | ✅ listed in Kite's NSEIX dump; **history depth to verify Monday** (needs login) | to verify | daily + 1m; live via 1d ticks |
 | Commodities | **Kite** MCX futures (CRUDEOIL, GOLD, SILVER, NATURALGAS, COPPER; near month) | ✅ listed in Kite's MCX dump; **historical access to verify Monday** | Kite has **no history for expired contracts** → near-month series builds forward | daily |
 | USD/INR | **Kite** CDS `USDINR` futures | ✅ listed | as above | daily |
@@ -51,8 +51,9 @@ format shown.
 - **Bulk / block deals** → `app.deals(trade_date, kind, symbol, client, side, qty, price_paisa)`
   - Forward only. A missed day is **recorded as missing**, never back-filled from elsewhere.
 - **Announcements / board meetings** → `app.announcements`, `app.board_meetings`
-  - Parsed from the PR zips already fetched: no new requests for history; `PARSE_VERSION` bump
-    re-scans once.
+  - Parsed from the same daily PR zips 1c reads. **Correction (2026-11-21):** 1c never saved the
+    zips (read in memory only), so the history needs **one more download of every zip** (~2,950
+    files, a few hours, at 1 request/second) via a `PARSE_VERSION` bump. Runs after any other load.
   - Headline text only. Classification is the Phase-3 news agent's job (LLM, fail-closed).
 - **Kite instruments (VIX, GIFT Nifty, MCX, CDS)**
   - Join the instrument master (new segments `NSEIX`, `MCX`, `CDS`), **not the stock universe**.
@@ -92,14 +93,25 @@ format shown.
    - Nothing else: `fii_stats.xls` is skipped (participant OI covers it), so no `xlrd`.
 5. **A FRED API key** goes in `.env` as `FRED_API_KEY`. You create it; I never see it.
 
-## Order of work once approved
+## Order of work once approved (status)
 
-1. Delivery % plus participant OI: the archive loaders already exist as a pattern.
-2. Announcements and board meetings from the existing zips.
-3. Kite instruments (after Monday's history check).
-4. Bulk/block deals (daily forward).
-5. FRED.
-6. News RSS.
-7. Economic-calendar import.
+1. ✅ **Delivery % plus participant OI/volume** — built 2026-11-21; history (2015→) loading.
+2. **Bulk/block deals** — forward capture implemented. Check live coverage after rollout.
+3. **News RSS** — scheduled fetch and read endpoint implemented with `defusedxml`.
+4. **Announcements, board meetings and market cap** — loader and Stock page implemented.
+   The two ledger entries share a single download per PR zip. History still needs to be loaded
+   after the step-1 history finishes.
+5. **Economic-calendar import** — authenticated CSV import and read endpoint implemented. Loading
+   events requires a reviewed CSV with an official source link on each row.
+6. **Kite instruments** — read-only checks on 2026-11-21 confirmed daily history for GIFT Nifty
+   (1,460 bars in the 2021-06-02 to 2026-11-20 request), minute history (49,231 bars in the
+   2026-09-23 to 2026-11-20 request), and five daily bars for each approved near-month MCX future.
+   Every sampled GIFT Nifty and MCX bar passed the exact-paisa parser. Kite also returned five
+   USDINR futures daily bars, but four failed the parser and the quoted tick size is ₹0.0025.
+   CDS ingestion needs an explicit decision on exact sub-paisa representation. GIFT Nifty
+   daily and minute ingestion use the existing extractors, with the instrument outside the stock
+   universe and minute finality applied overnight. MCX commodity work is paused per the user.
+7. **FRED** — ingestion and read endpoint implemented. Live fetching starts once `FRED_API_KEY`
+   is configured.
 
 Each step gets its own tests (fixtures, no network) and coverage rows on the Admin page.

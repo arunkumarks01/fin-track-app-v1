@@ -81,7 +81,10 @@ export function parseJobs(body: unknown): IngestJob {
     inserted: backfill ? num(backfill.inserted, "inserted") : null,
     quarantined: backfill ? num(backfill.quarantined, "quarantined") : null,
     symbolErrors: backfill ? num(backfill.errors, "errors") : null,
-    intraday: parseIntraday(result.intraday ?? result.progress),
+    // live `progress` belongs to whichever job runs; only the 1-minute job's has this shape
+    intraday: parseIntraday(
+      result.intraday ?? (last.name === "intraday_ingest" ? result.progress : undefined),
+    ),
   };
 }
 
