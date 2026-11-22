@@ -63,6 +63,7 @@ class TestApprovalRequest:
         approval.reject(now, "Quantity too high")
         assert approval.status == "rejected"
         assert approval.responded_at == now
+        assert approval.response_text is not None
         assert "Quantity" in approval.response_text
 
     def test_mark_timed_out(self, approval: ApprovalRequest) -> None:
@@ -70,6 +71,7 @@ class TestApprovalRequest:
         now = approval.sent_at + timedelta(seconds=301)
         approval.mark_timed_out(now)
         assert approval.status == "timed_out"
+        assert approval.response_text is not None
         assert "timeout" in approval.response_text.lower()
 
 

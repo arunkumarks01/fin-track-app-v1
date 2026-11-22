@@ -1,6 +1,7 @@
 """Integration test: Phase 5 auto-exits + marks in store.advance() flow."""
 
 from datetime import date
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -13,7 +14,7 @@ from app.sandbox.model import Instruction
 class TestPhase5Integration:
     """End-to-end: order → fill → exit detection → mark update."""
 
-    async def test_auto_exit_on_sl_hit(self, db, app_settings) -> None:
+    async def test_auto_exit_on_sl_hit(self, db: Any, app_settings: Any) -> None:
         """
         1. Create account
         2. Submit buy order with SL/target

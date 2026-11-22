@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -16,7 +17,7 @@ from app.sandbox.model import Bar, Instruction
 class TestPaperExitFlow:
     """End-to-end: order → fill → next day → auto exit."""
 
-    async def test_buy_order_exit_on_stop_hit(self, db, app_settings) -> None:
+    async def test_buy_order_exit_on_stop_hit(self, db: Any, app_settings: Any) -> None:
         """
         1. Create account, start day 1
         2. Submit buy order on day 1
@@ -64,7 +65,7 @@ class TestPaperExitFlow:
             await store.advance(
                 conn,
                 account_id,
-                expected_day=date(2015, 1, 6),
+                expected=date(2015, 1, 6),
                 now=app_settings.clock.now(),
                 settings=app_settings,
             )
