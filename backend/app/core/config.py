@@ -293,7 +293,7 @@ class Settings(BaseSettings):
     # bulk.csv / block.csv: the latest session only (captured forward)
     nse_deals_base_url: str = "https://nsearchives.nseindia.com/content/equities"
     # after each daily run (and its NSE archive load), fetch the new days' reference files too
-    reference_after_daily: bool = True
+    reference_after_daily: bool = False
     # NSE's participant OI files are often off by 1-2 contracts between the participants' sum
     # and its own TOTAL (rounding; measured 2026-11-21). Within this, stored as given and the gap
     # recorded; beyond it, the day is refused.

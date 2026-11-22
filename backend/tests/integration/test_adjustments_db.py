@@ -420,6 +420,7 @@ async def test_daily_job_loads_archive_and_measures_after_backfill(
         ingest_daily_start=date(2026, 11, 9),
         kite_window_days={"day": 30},
         nse_archive_after_daily=True,
+        reference_after_daily=True,
         nse_archive_start=date(2026, 11, 1),
         adj_min_window_days=2,
         kite_api_key="k" * 10,
