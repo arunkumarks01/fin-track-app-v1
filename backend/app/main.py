@@ -35,7 +35,6 @@ from app.data.jobs import DAILY_INGEST_JOB_ID, INTRADAY_INGEST_JOB_ID, IngestRun
 from app.db.migrate import migrate
 from app.db.policies import apply_storage_policies
 from app.db.pool import create_pool
-from app.db.retention import CLEANUP_JOB_ID, ticks_cleanup_job
 
 __version__ = "0.0.1"
 
@@ -86,12 +85,6 @@ def create_app(
             kite = KiteClient(http, cfg, sessions, clk) if cfg.kite_configured else None
             ingest = IngestRunner(pool, kite, cfg, clk, http=http)
             scheduler = build_scheduler(cfg)
-            register_job(
-                scheduler,
-                ticks_cleanup_job(pool, clk, cfg),
-                CronTrigger.from_crontab(cfg.ticks_retention_cron, timezone=MARKET_TZ),
-                job_id=CLEANUP_JOB_ID,
-            )
             register_job(
                 scheduler,
                 ingest.daily_ingest,

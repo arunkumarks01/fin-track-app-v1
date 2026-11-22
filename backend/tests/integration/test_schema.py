@@ -12,10 +12,9 @@ from app.core.config import Settings
 from app.core.tradingdate import MARKET_TZ, canonical_daily_ts
 from app.db.migrate import Migration, MigrationError, discover, migrate
 from app.db.policies import apply_storage_policies
-from app.db.retention import TICKS_TABLE, drop_expired_chunks, ticks_cleanup_job
+from app.db.retention import TICKS_TABLE, drop_expired_chunks
 from tests.conftest import build_settings
 from tests.fixtures.candles import Candle, Pattern, make_daily_candles
-from tests.fixtures.clock import FrozenClock
 
 pytestmark = pytest.mark.db
 
@@ -76,6 +75,7 @@ async def test_hypertables_exist_without_tsl_features(db: Any) -> None:
     assert [(r["hypertable_name"], r["compression_enabled"]) for r in rows] == [
         ("ohlcv_1m", False),
         ("ohlcv_candles", False),
+        ("option_snapshots", False),
         ("ticks", False),
     ]
     jobs = await db.fetchval(
@@ -100,12 +100,13 @@ async def test_chunk_intervals_follow_config(db: Any, db_settings: Settings) -> 
     assert [(r["hypertable_name"], r["time_interval"]) for r in rows] == [
         ("ohlcv_1m", timedelta(days=7)),
         ("ohlcv_candles", timedelta(days=7)),
+        ("option_snapshots", timedelta(days=7)),  # fixed weekly chunks, not from config
         ("ticks", timedelta(hours=6)),
     ]
 
 
 # --- retention fallback: drop_chunks job ---
-TICK_INSERT = "INSERT INTO app.ticks (symbol, ts, last_price) VALUES ($1, $2, $3)"
+TICK_INSERT = "INSERT INTO app.ticks (sid, ts, ltp) VALUES ($1, $2, $3)"
 NOW = datetime(2024, 6, 1, 3, 0, tzinfo=UTC)
 
 
@@ -113,7 +114,7 @@ async def _seed_ticks(db: Any, settings: Settings) -> None:
     await migrate(db)
     await apply_storage_policies(db, settings)  # 24h chunks
     ages = [timedelta(days=d) for d in (120, 100, 91, 89, 1)]
-    await db.executemany(TICK_INSERT, [("INFY", NOW - a, 150_000) for a in ages])
+    await db.executemany(TICK_INSERT, [(1, NOW - a, 150_000) for a in ages])
 
 
 async def test_retention_drops_only_fully_expired_chunks(db: Any, db_settings: Settings) -> None:
@@ -131,18 +132,6 @@ async def test_retention_never_touches_candles(db: Any, db_settings: Settings) -
     await db.executemany(INSERT, [_row(c) for c in old])
     await drop_expired_chunks(db, TICKS_TABLE, NOW - timedelta(days=90))
     assert await db.fetchval("SELECT count(*) FROM app.ohlcv_candles") == 5
-
-
-async def test_cleanup_job_uses_clock_and_config(test_dsn: str, db: Any) -> None:
-    settings = build_settings(database_url=test_dsn, ticks_retention_days=95)
-    await _seed_ticks(db, settings)
-    pool = await asyncpg.create_pool(test_dsn, min_size=1, max_size=1)
-    try:
-        job = ticks_cleanup_job(pool, FrozenClock(NOW), settings)
-        assert len(await job()) == 2  # 120d and 100d chunks; 91d is within 95d
-    finally:
-        await pool.close()
-    assert await db.fetchval("SELECT count(*) FROM app.ticks") == 3
 
 
 # --- dedup key = trading date ---
