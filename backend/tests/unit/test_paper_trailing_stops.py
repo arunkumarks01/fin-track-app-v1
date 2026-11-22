@@ -1,6 +1,5 @@
 """Tests for trailing stop management."""
 
-import pytest
 
 from app.sandbox.trailing import (
     calculate_trailing_sl,
@@ -146,9 +145,7 @@ class TestUpdateExtremes:
 
     def test_buy_order_no_update_if_bar_lower(self) -> None:
         """Buy order: highest was 2110, bar goes to 2100→2105 → highest stays 2110."""
-        highest, lowest = update_extremes(
-            buy_order=True,
-            highest_paisa_seen=211000,
+        highest, _lowest = update_extremes(
             lowest_paisa_seen=None,
             bar_high=210500,
             bar_low=210000,
@@ -169,10 +166,7 @@ class TestUpdateExtremes:
 
     def test_sell_order_no_update_if_bar_higher(self) -> None:
         """Sell order: lowest was 1890, bar goes to 1895→1900 → lowest stays 1890."""
-        highest, lowest = update_extremes(
-            buy_order=False,
-            highest_paisa_seen=None,
-            lowest_paisa_seen=189000,
+        _highest, lowest = update_extremes(
             bar_high=190000,
             bar_low=189500,
         )

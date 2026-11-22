@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -14,15 +15,9 @@ from app.risk.correlation import portfolio_correlation
 from app.risk.parameters import PaperMode, RiskParameters
 from app.risk.plans import BPS
 from app.risk.sizing import Portfolio, Sizing, checks
+from app.sandbox.exits import detect_exit, exit_instruction
 from app.sandbox.model import Bar, Instruction, fees, match, sold_cost
 from app.sandbox.parameters import PaperParameters
-from app.sandbox.exits import detect_exit, exit_instruction
-from app.sandbox.marks import calculate_mtm
-from app.sandbox.trailing import (
-    calculate_trailing_sl,
-    should_update_trailing_sl,
-    update_extremes,
-)
 
 
 class PaperError(ValueError):
@@ -492,31 +487,25 @@ async def advance(
             await _update_order(conn, order["id"], status, filled, detail)
             fills += 1
 
-            # Phase 5: Check for auto-exits after fill (gracefully skip if schema doesn't have Phase 5 yet)
-            try:
+            # Phase 5: Check for auto-exits after fill
+            with contextlib.suppress(Exception):
                 exit_order_dict = await _process_phase5_exits(
                     conn, order, bar, quantity, now
                 )
                 if exit_order_dict:
-                    # Create auto-exit order
                     exit_result = await submit(
                         conn,
                         account_id,
-                        uuid4(),  # Auto-generated request ID for exit
+                        uuid4(),
                         Instruction.model_validate(exit_order_dict),
                         now,
                     )
-                    # Try to link exit (if schema has the column)
-                    try:
+                    with contextlib.suppress(Exception):
                         await conn.execute(
                             "UPDATE app.paper_orders SET exit_order_id=$1 WHERE id=$2",
                             exit_result["id"],
                             order["id"],
                         )
-                    except Exception:
-                        pass  # Phase 5 columns don't exist yet
-            except Exception:
-                pass  # Phase 5 not available yet
         await conn.execute(
             "DELETE FROM app.paper_positions WHERE account_id=$1 AND NOT (symbol=ANY($2::text[]))",
             account_id,
@@ -584,7 +573,10 @@ async def _process_phase5_exits(
     instruction = Instruction.model_validate_json(order["instruction"])
 
     # Detect exit (SL or target hit) - this always works
-    trigger = detect_exit(instruction, bar, filled_qty, current_stop_paisa=instruction.risk_stop_paisa)
+    trigger = detect_exit(
+        instruction, bar, filled_qty,
+        current_stop_paisa=instruction.risk_stop_paisa,
+    )
     if trigger:
         return exit_instruction(instruction, trigger).model_dump()
 

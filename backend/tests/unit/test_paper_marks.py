@@ -1,6 +1,5 @@
 """Tests for live marks and MTM calculation."""
 
-import pytest
 
 from app.sandbox.marks import calculate_mtm, portfolio_mtm, stale_mark_age_seconds
 

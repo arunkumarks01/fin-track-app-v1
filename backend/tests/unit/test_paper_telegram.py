@@ -1,6 +1,6 @@
 """Tests for Telegram approval flow."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -13,7 +13,7 @@ class TestApprovalRequest:
     @pytest.fixture
     def approval(self) -> ApprovalRequest:
         """Sample approval request."""
-        now = datetime(2026, 11, 22, 13, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 11, 22, 13, 0, 0, tzinfo=UTC)
         return ApprovalRequest(
             order_id=1,
             symbol="NSE:RELIANCE",
@@ -78,21 +78,21 @@ class TestApprovalTTL:
 
     def test_ttl_within_window(self) -> None:
         """50 seconds elapsed of 300 → 250 remaining."""
-        sent = datetime(2026, 11, 22, 13, 0, 0, tzinfo=timezone.utc)
+        sent = datetime(2026, 11, 22, 13, 0, 0, tzinfo=UTC)
         now = sent + timedelta(seconds=50)
         ttl = compute_approval_ttl_seconds(sent, now, timeout_seconds=300)
         assert ttl == 250
 
     def test_ttl_at_expiry(self) -> None:
         """300 seconds elapsed → 0 remaining."""
-        sent = datetime(2026, 11, 22, 13, 0, 0, tzinfo=timezone.utc)
+        sent = datetime(2026, 11, 22, 13, 0, 0, tzinfo=UTC)
         now = sent + timedelta(seconds=300)
         ttl = compute_approval_ttl_seconds(sent, now, timeout_seconds=300)
         assert ttl == 0
 
     def test_ttl_past_expiry_clamps_to_zero(self) -> None:
         """301 seconds elapsed → 0 (not negative)."""
-        sent = datetime(2026, 11, 22, 13, 0, 0, tzinfo=timezone.utc)
+        sent = datetime(2026, 11, 22, 13, 0, 0, tzinfo=UTC)
         now = sent + timedelta(seconds=301)
         ttl = compute_approval_ttl_seconds(sent, now, timeout_seconds=300)
         assert ttl == 0

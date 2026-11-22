@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from app.sandbox.exits import detect_exit, exit_instruction, realized_pnl
+from typing import Any
+
+from app.sandbox.exits import detect_exit, exit_instruction
 from app.sandbox.marks import calculate_mtm, stale_mark_age_seconds
 from app.sandbox.model import Bar, Instruction
 from app.sandbox.trailing import (
@@ -81,7 +83,8 @@ async def process_exits_and_marks(
         mark_updated_at.timestamp() if hasattr(mark_updated_at, "timestamp") else 0,
         now_unix,
     ) > 300:  # Update mark if stale (> 5 min)
-        mtm = calculate_mtm(bar.close, position["cost_paisa"] // position["quantity"], position["quantity"])
+        cost_per = position["cost_paisa"] // position["quantity"]
+        mtm = calculate_mtm(bar.close, cost_per, position["quantity"])
         await conn.execute(
             """UPDATE app.paper_positions
                SET mark_paisa=$1, mark_updated_at=now(), mtm_paisa=$2

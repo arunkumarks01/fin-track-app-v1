@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.sandbox.exits import ExitReason, ExitTrigger, detect_exit, exit_instruction, realized_pnl
+from app.sandbox.exits import ExitTrigger, detect_exit, exit_instruction, realized_pnl
 from app.sandbox.model import Bar, Instruction
 
 
@@ -179,11 +179,10 @@ class TestExitInstruction:
         assert exit_ord.risk_target_paisa is None
 
     def test_sell_exit_is_buy_market(self) -> None:
-        """Exit from a sell order (created via direct API, not through Instruction) is a MARKET buy."""
+        """Exit from a sell order is a MARKET buy (documents Phase 5 behavior)."""
         # For now, sells cannot be created with Instruction (Phase 4 constraint).
         # This documents the expected behavior when derivatives Phase 5 allows it.
         # We can test with a minimal mocked order dict instead.
-        from app.sandbox.model import Instruction as OrderClass
 
         # Create a buy order and verify its exit is sell (the inverse).
         order = Instruction(

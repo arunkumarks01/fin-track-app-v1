@@ -1,6 +1,6 @@
 """Integration test: Phase 5 auto-exits + marks in store.advance() flow."""
 
-from datetime import date, datetime, timezone
+from datetime import date
 from uuid import uuid4
 
 import pytest
@@ -45,8 +45,9 @@ class TestPhase5Integration:
                 risk_target_paisa=210000,
             )
             req_1 = uuid4()
-            ord_result = await store.submit(conn, account_id, req_1, order_1, app_settings.clock.now())
-            order_id = ord_result["id"]
+            ord_result = await store.submit(
+                conn, account_id, req_1, order_1, app_settings.clock.now()
+            )
             assert ord_result["status"] == "pending"
 
             # Advance: order fills + exit detection

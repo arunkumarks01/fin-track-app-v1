@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from app.sandbox.model import Bar, Instruction, Side
-
+from app.sandbox.model import Bar, Instruction
 
 ExitReason = Literal["stop_hit", "target_hit"]
 

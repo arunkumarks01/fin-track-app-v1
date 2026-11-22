@@ -1,10 +1,8 @@
 """Tests for derivatives ordering and margin."""
 
-import pytest
 
 from app.sandbox.derivatives import (
     ContractSpec,
-    InstrumentType,
     contract_key,
     margin_required,
     sufficient_margin,
