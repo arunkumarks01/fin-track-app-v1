@@ -23,13 +23,22 @@ FROZEN_START = datetime(2024, 1, 15, 9, 15, tzinfo=IST)
 SettingsFactory = Callable[..., Settings]
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--snapshot-update",
+        action="store_true",
+        help="Regenerate reviewed regression snapshot baselines",
+    )
+
+
 def build_settings(**overrides: Any) -> Settings:
     values: dict[str, Any] = {
         "app_env": "test",
         "api_auth_token": TEST_TOKEN,
         "database_url": "postgresql://u:p@localhost:5432/unused_test",
-        # the daily job's NSE-archive chain is exercised by its own tests, not every daily test
+        # the daily job's NSE-archive + reference chains are exercised by their own tests only
         "nse_archive_after_daily": False,
+        "reference_after_daily": False,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
