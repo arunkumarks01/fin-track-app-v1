@@ -11,6 +11,8 @@ dependencies = [
     "pydantic-settings>=2.4",
     "httpx>=0.27",
     "defusedxml==0.7.1",
+    "websockets==17.4",
+    "pyarrow==26.0.1",
 ]
 
 [dependency-groups]
@@ -35,6 +37,9 @@ src = ["."]
 select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF", "ASYNC", "DTZ", "PT"]
 ignore = []
 
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106"]
 
@@ -52,6 +57,11 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 # No stub package added for the approved RSS parser.
 module = ["defusedxml", "defusedxml.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# pyarrow ships no type information (DEC-1D-DEPS); no stub package added
+module = ["pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
