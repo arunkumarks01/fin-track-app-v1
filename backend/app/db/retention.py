@@ -4,19 +4,17 @@
 `drop_chunks` (Apache-licensed). Whole chunks are dropped — rows newer than the cutoff are
 never touched, so a chunk straddling the cutoff survives until it fully ages out.
 
-Only `ticks` has retention. `ohlcv_candles` is never pruned: daily history back to 2015
-must survive. Phase 1 must export ticks to the Parquet cold tier before they age out.
+`ohlcv_candles` is never pruned: daily history back to 2015 must survive. Ticks are NOT
+dropped by any scheduled job from here: app/data/tick_export.py drops a tick chunk only after
+its Parquet file is written, read back and matched (slice 1d). This helper stays for those
+exports and for tests; nothing calls it on a timer.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
-
-from app.core.clock import Clock
-from app.core.config import Settings
 
 log = logging.getLogger(__name__)
 
@@ -34,18 +32,3 @@ async def drop_expired_chunks(conn: Any, table: str, cutoff: datetime) -> list[s
         cutoff,
     )
     return [str(r["chunk"]) for r in rows]
-
-
-def ticks_cleanup_job(
-    pool: Any, clock: Clock, settings: Settings
-) -> Callable[[], Awaitable[list[str]]]:
-    retention = timedelta(days=settings.ticks_retention_days)
-
-    async def run() -> list[str]:
-        cutoff = clock.now() - retention
-        async with pool.acquire() as conn:
-            dropped = await drop_expired_chunks(conn, TICKS_TABLE, cutoff)
-        log.info("ticks retention: dropped %d chunk(s) older than %s", len(dropped), cutoff)
-        return dropped
-
-    return run

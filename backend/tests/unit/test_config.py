@@ -18,9 +18,9 @@ def test_defaults_are_paper_and_valid(make_settings: SettingsFactory) -> None:
 def test_values_come_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("API_AUTH_TOKEN", "e" * 32)
     monkeypatch.setenv("DATABASE_URL", "postgresql://a:b@h:1/db")
-    monkeypatch.setenv("TICKS_RETENTION_DAYS", "45")
+    monkeypatch.setenv("TICKS_HOT_DAYS", "4")
     s = Settings(_env_file=None)
-    assert s.ticks_retention_days == 45
+    assert s.ticks_hot_days == 4
     assert s.api_auth_token.get_secret_value() == "e" * 32
 
 
