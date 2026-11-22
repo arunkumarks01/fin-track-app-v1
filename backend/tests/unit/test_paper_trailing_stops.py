@@ -1,6 +1,5 @@
 """Tests for trailing stop management."""
 
-
 from app.sandbox.trailing import (
     calculate_trailing_sl,
     should_update_trailing_sl,

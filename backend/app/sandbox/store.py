@@ -489,9 +489,7 @@ async def advance(
 
             # Phase 5: Check for auto-exits after fill
             with contextlib.suppress(Exception):
-                exit_order_dict = await _process_phase5_exits(
-                    conn, order, bar, quantity, now
-                )
+                exit_order_dict = await _process_phase5_exits(conn, order, bar, quantity, now)
                 if exit_order_dict:
                     exit_result = await submit(
                         conn,
@@ -574,7 +572,9 @@ async def _process_phase5_exits(
 
     # Detect exit (SL or target hit) - this always works
     trigger = detect_exit(
-        instruction, bar, filled_qty,
+        instruction,
+        bar,
+        filled_qty,
         current_stop_paisa=instruction.risk_stop_paisa,
     )
     if trigger:

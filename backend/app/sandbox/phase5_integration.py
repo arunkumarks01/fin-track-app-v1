@@ -79,10 +79,14 @@ async def process_exits_and_marks(
 
     # Update position mark price
     mark_updated_at = position.get("mark_updated_at")
-    if mark_updated_at is None or stale_mark_age_seconds(
-        mark_updated_at.timestamp() if hasattr(mark_updated_at, "timestamp") else 0,
-        now_unix,
-    ) > 300:  # Update mark if stale (> 5 min)
+    if (
+        mark_updated_at is None
+        or stale_mark_age_seconds(
+            mark_updated_at.timestamp() if hasattr(mark_updated_at, "timestamp") else 0,
+            now_unix,
+        )
+        > 300
+    ):  # Update mark if stale (> 5 min)
         cost_per = position["cost_paisa"] // position["quantity"]
         mtm = calculate_mtm(bar.close, cost_per, position["quantity"])
         await conn.execute(

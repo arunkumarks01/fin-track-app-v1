@@ -1,6 +1,5 @@
 """Tests for derivatives ordering and margin."""
 
-
 from app.sandbox.derivatives import (
     ContractSpec,
     contract_key,
