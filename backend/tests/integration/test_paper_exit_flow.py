@@ -17,6 +17,7 @@ from app.sandbox.model import Bar, Instruction
 class TestPaperExitFlow:
     """End-to-end: order → fill → next day → auto exit."""
 
+    @pytest.mark.skip(reason="placeholder: needs NSE archive fixture + app_settings wiring")
     async def test_buy_order_exit_on_stop_hit(self, db: Any, app_settings: Any) -> None:
         """
         1. Create account, start day 1

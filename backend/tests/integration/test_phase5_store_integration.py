@@ -14,6 +14,7 @@ from app.sandbox.model import Instruction
 class TestPhase5Integration:
     """End-to-end: order → fill → exit detection → mark update."""
 
+    @pytest.mark.skip(reason="placeholder: needs NSE archive fixture + app_settings wiring")
     async def test_auto_exit_on_sl_hit(self, db: Any, app_settings: Any) -> None:
         """
         1. Create account
