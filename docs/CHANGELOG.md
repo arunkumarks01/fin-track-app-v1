@@ -1,5 +1,188 @@
 # Changelog
 
+## [Unreleased] — Phase 5.1: Automatic exits (2026-11-22)
+
+- **Task 1 (auto exits) complete.** Built `app.sandbox.exits`: detect when a filled order's SL or target is hit in a bar, generate exit order. Exit detector checks SL first (stop_hit reason), then target (target_hit reason). Exit instruction reverses side + quantity, always MARKET. P&L calculated as (exit−entry)×qty−fees. Detector supports trailing SL override (Phase 5.2 builds on this).
+- **Migration 0017** adds Phase 5 schema: columns for exit tracking + trailing stops + live marks + derivatives + Telegram approvals. Applied as one transaction; all tasks build on it.
+- **13 unit tests** (`test_paper_exits.py`): SL/target detection, exit order generation, P&L calculation, edge cases (no fill, no levels, trailing override). **15 integration tests** (`test_paper_exit_flow.py`) structures end-to-end flows.
+- **Next:** trailing stops (Task 2), live marks (Task 3, parallel), derivatives (Task 4), Telegram (Task 5).
+
+## [Unreleased] — Stock opportunity scan
+
+- Swing and intraday stock scans run as manually controllable backend jobs, independently
+  of optional schedules. Completed results are saved in TimescaleDB and the Candidates
+  page shows the latest 30 reports per mode, including unavailable symbols. Selecting a
+  result evaluates the stock again with current data. Stopped or failed runs do not
+  replace a completed report.
+
+## [Unreleased] — Entry-window validation
+
+- Realistic-mode trade plans now flag an unconfirmed next trading session and block the
+  plan until the entry window can be verified.
+
+## [Unreleased] — Phase 3 news matching
+
+- Match complete ticker names in news headlines so short symbols do not select unrelated
+  words. News remains unknown until a provider returns a validated classification.
+
+## [Unreleased] — NSE participant backfill follow-up
+
+- Recorded the 27 remaining participant-file failures as a priority for 22 November.
+  Two 17 September 2019 files were recovered after handling a duplicated title year.
+
+## [Unreleased] — Manual paper replay
+
+- Added a Paper trading workspace backed by independent replay accounts and a transactional
+  NSE equity ledger for orders, fills, positions and P&L. Replay advances only on explicit
+  user action and uses finalized as-traded daily bars.
+- Market, limit, stop-market and GTT replay orders use session volume caps, configurable
+  simulated fees and explicit handling of partial fills. Pause, kill switch and order
+  idempotency persist across restarts. Realistic mode applies the available portfolio limits.
+- Historical corporate actions stop affected replays. Live marks, derivatives, automatic
+  exits, trailing stops and Telegram approval are separate remaining Phase 5 work.
+
+## [Unreleased] — Phase 4 paper trade planning
+
+- Qualified candidates can show a tick-aligned entry trigger and price limit, a session
+  cutoff, a structure/ATR stop and target, and a trailing-stop rule. Position sizing and
+  reward-to-risk use the worst permitted entry and exclude execution costs.
+- Added fixed-risk sizing, fixed lots and a gated Kelly calculation. Paper previews use
+  configured capital. Realistic checks require portfolio state, while Learning surfaces
+  warnings without blocking. The portfolio ledger, margin checks and trailing after a fill
+  need the Phase 5 integration.
+
+## [Unreleased] — Phase 3 suggestion explanations
+
+- Candidates now show a compact results list and an explanation-first detail panel. The
+  supporting chart marks the evaluated candle and relevant price levels or EMAs.
+
+- Added research candidates and rule-by-rule explanations for swing and 5-minute
+  intraday strategies, plus separate futures and option contract checks. The UI shows
+  actual values, thresholds, data age, invalidation and calibration status.
+- Added revisioned custom strategy definitions, a calibration read path, opt-in
+  scheduled scans and a bearer-protected, fail-closed Claude CLI news review.
+- Live inputs, the first held-out calibration runs, and production scanner acceptance
+  still need verification. Guided lessons and the Explainer agent remain in Phase 8.
+
+## [Unreleased] — Admin job controls and NSE reference repair
+
+- Added database timeout safeguards to the Phase 1 roadmap after an abandoned announcement
+  transaction blocked the reference backfill. Implementation and verification are pending.
+- Admin can start supported ingestion, backfill and capture jobs, stop a selected run, and
+  pause or resume its schedule for the current backend session. Actions require the existing
+  API bearer token. Completed ingestion windows remain in the database when a run stops.
+- Admin now shows recent reference-file failures and reports interrupted database connections
+  while a backfill retries.
+- The participant parser accepts the verified NSE title variants, worksheet calculations
+  after the official rows and a checked long-plus-short checksum. It still requires a full
+  trade date and validates the four participant rows and exchange totals.
+- Accept a trailing period after a complete NSE participant-file date, as found in 2020
+  archive titles. The parser still checks the reported date against the requested session.
+- Accept mixed CR and CRLF archive CSVs and record any remaining CSV errors per file so
+  unrelated dates can continue loading.
+
+## [Unreleased] — Charts indicators and Options analytics UI
+
+- Charts opens with adjusted prices even if a saved layout last used Raw. Raw remains
+  selectable and explains the price jumps from splits and bonus issues.
+- Charts follows the selected symbol and interval for server indicators. It shows EMA20,
+  EMA50 and EMA200, recent EMA history, and the other Phase 2 indicator groups. EMA20 is
+  included by default and compared with TA-Lib in the golden tests.
+- Options shows saved chain coverage, open interest by strike, expiry metrics, IV and Greeks.
+  Pricing inputs are optional overrides. Missing, partial and stale reports are labelled in the UI.
+
+## [Unreleased] — Phase 2 research analytics
+
+- Added `GET /api/analytics/indicators` for stored daily and intraday candles. It returns
+  SMA, EMA, RSI, ATR, ADX and directional indicators, MACD, Bollinger and Keltner bands,
+  stochastic, Supertrend, ROC, OBV, relative volume and strength, prior Donchian and
+  52-week levels, central pivot range, opening gap and range, and session VWAP estimated
+  from bar typical prices and volume.
+- Preserved the existing 2016 intraday analysis floor. Indicator state resets across known
+  missing sessions, intraday calculations skip unverified sessions, and EMA200 requires
+  200 usable bars. Responses report the source, warm-up and benchmark freshness.
+- Added `GET /api/analytics/options` for the captured strikes of each expiry. It reports
+  OI and volume PCR, max-pain ties, prior-snapshot OI and premium changes, implied volatility,
+  Greeks, gross gamma walls and constant-tenor ATM IV rank. Pricing uses European
+  Black-Scholes-Merton and positive, uncrossed bid/ask midpoints. Rate and dividend assumptions
+  are explicit. IV rank never extrapolates outside the captured maturities and needs enough
+  comparable days. Raw snapshots remain the source of record.
+- Added deterministic regression snapshots, warm-up convergence checks, TA-Lib and QuantLib
+  golden comparisons, and integration tests for both endpoints.
+
+## [Unreleased] — Resume reference downloads during daily ingestion
+
+- The daily job's reference-data stage uses the same database reconnect and ledger-based
+  resume path as a manually started reference download.
+
+## [Unreleased] — Slice 1d: live ticks, Parquet export, option-chain snapshots (2026-11-21)
+
+Built to the locked DEC-1D-* choices. Tested without a live market (no market today); the real check is Monday 23 Nov with a Kite login.
+
+- **Tick parser** (`app/data/kite_ticks.py`): Kite's binary format, strict. Full-mode tradables (184 bytes, 5-level depth), index
+  packets (28/32), quote (44) and LTP (8). Anything malformed (wrong length, overrun, trailing bytes) is refused and counted.
+  Layout checked against the 2026-11-20 probe; real packets are verified Monday.
+- **Compact table `app.ticks`** (migration 0014, replaces the empty Phase-0 placeholder): smallint instrument id, int4 paisa, 5-level
+  depth as fixed columns (not arrays), daily chunks. A value that doesn't fit its column is refused, never clipped.
+- **Capture** (`app/data/ticks.py`): one in-process job a day (`TICKS_CAPTURE_CRON`, 08:58 IST) over the universe + INDIA VIX +
+  GIFT NIFTY, window 09:00-16:00 (`TICKS_CAPTURE_START/END`, covers the 15:45 close and post-close from 2026-12-07).
+  - No Kite session: nothing connects, the run says so.
+  - A dropped or silent connection reconnects with backoff; a database drop keeps rows in memory and retries; past the buffer cap the
+    oldest rows are dropped and counted.
+  - The token appears only in the connect URL, never logged. One record per session in `app.tick_capture_runs`.
+- **Parquet export, fail closed** (`app/data/tick_export.py`): a chunk older than `TICKS_HOT_DAYS` (7) is read in one snapshot,
+  written to zstd Parquet, read back, compared (row count + 5 checksums), and only then dropped. Mismatch, error or an unwritable folder
+  keeps the chunk and flags it in `app.tick_exports`.
+  - The old unconditional 90-day drop job is **removed**; `TICKS_RETENTION_DAYS` is gone (now `TICKS_HOT_DAYS`).
+  - File work runs in threads so the API stays responsive.
+- **Option chains** (`app/data/option_chain.py`, tables `app.option_snapshots` + `_meta`): every 5 minutes 09:15-15:30, NIFTY, BANKNIFTY,
+  FINNIFTY, MIDCPNIFTY + the top 20 stocks by 20-session option turnover (from the 1f history; `CHAIN_STOCK_OVERRIDE` wins), 2 expiries,
+  ATM +-15 strikes. Raw values only: price, volume, OI, best bid/ask, last trade time, plus spot and near-month future. Missing quotes make
+  a 'partial' snapshot; no spot makes an 'error' row; nothing is guessed. `KiteClient.quote()` is rate-limited to 1 request/s.
+- **Admin:** a "Live ticks and option chains" panel (`GET /api/data/ticks`); `GET /api/data/chain?underlying=` returns the newest raw chain.
+- **Dependencies (approved, pinned):** `websockets` 17.4, `pyarrow` 26.0.1 (they had been dropped from `pyproject.toml` by the 1e commit).
+- **Tests:** 3 parser, 5 capture (real local WebSocket server: reconnect, bad packets, unknown token, no session, silence, database
+  unreachable), 3 export (verified-then-dropped, altered file keeps the chunk, unwritable folder), 5 chain-selection unit tests,
+  5 chain DB tests (fake Kite /quote), 1 endpoints test, 3 frontend.
+- **Pre-open:** capture starts at 09:00, so pre-open ticks are recorded from the first run (DEC-1D-OWNERS).
+
+## [Unreleased] — Downloads survive database drops; economic-calendar draft (2026-11-21)
+
+- **Why the 1e download kept stopping:** the SSH tunnel to the database drops every 20-30 minutes ("server not responding"), the job
+  lost its connection and failed. The 1e reference job, the 1f F&O job and the NSE archive job now wait and run again
+  (`INTRADAY_DB_RETRIES`, `INTRADAY_DB_RETRY_WAIT_SECONDS`, same as the 1-minute job). Every loader skips what its ledger already
+  holds, so a re-run continues where it stopped. Tests: lost twice then works; gives up after the limit; other errors aren't retried.
+- **Economic calendar draft:** `docs/data/economic_calendar_draft.csv`, the 16 FOMC meetings of 2026-27 read from federalreserve.gov
+  (decision day; times left blank, the page gives none). Parsed with the real importer. **Not imported yet**: it waits for the user's
+  review. RBI policy dates and MoSPI release dates are not in it: their sites could not be read from here, and nothing is guessed.
+
+## [Unreleased] — Slice 1f: futures and options history (2026-11-21)
+
+Sources approved in advance by the user (DEC-1D-OWNERS): NSE's F&O bhavcopy archive, same honest-client rules as 1c/1e.
+
+- **Two file formats**, one normalised row:
+  - old (2015 to mid-2024): `content/historical/DERIVATIVES/<YYYY>/<MON>/fo<DD><MON><YYYY>bhav.csv.zip`;
+  - UDiFF (from 2024-01-02, verified): `content/fo/BhavCopy_NSE_FO_0_0_0_<YYYYMMDD>_F_0000.csv.zip`.
+  - `FO_UDIFF_FROM` picks the format by date; both exist through mid-2024.
+- **Table `app.fo_daily`** (migration 0013): one row per contract per day, prices as exact integer paisa, contracts,
+  open interest and its change; the newer format also gives the previous close, the spot price and the lot size.
+  - Only contracts that traded or hold open interest are kept (about 30,000 of 45,000 a day now; about 5,000 of 29,000 in 2015).
+  - Estimated 36 million rows, about 4 GB.
+- **Rules:** newest first, one transaction per day, resumable, a 404 or a mislabelled file is a gap, a 403 stops.
+  - New: the load stops when the database reaches `FO_DB_BUDGET_GB` (35).
+  - A row that doesn't parse or has high below low is rejected.
+  - NSE's own quirk is kept and counted: in thin contracts the close can sit outside the day's high–low (seen 2015-01-05: MOTHERSUMI, SUNTV).
+- Job `fo_history_ingest`, `POST /api/data/ingest/fo-history`, `GET /api/data/fo`; Admin shows a "Futures & options history" panel.
+- Tests: 5 parser tests on verbatim lines of real files, 4 DB tests (both formats, a gap, resume, a mislabelled file, a 403, the size
+  budget, the endpoint), 3 frontend tests.
+- **Not live yet:** the backend running now was started by another tool and is mid-download of the 1e files; it needs a restart (and
+  `POST /api/data/ingest/fo-history`) after that download finishes.
+
+## [Unreleased] — Isolate Next.js dev output
+
+- The Next.js dev server uses `.next-dev`. Production build and start use `.next`, so a build
+  can run alongside local development without replacing the dev server's chunks.
+
 ## [Unreleased] — NSE market cap and historical participant files (2026-11-21)
 
 - Migration 0012 stores NSE's published equity market cap in integer paisa and the issue size

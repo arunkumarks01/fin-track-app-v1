@@ -10,20 +10,9 @@ The plan lives in `docs/` and is **authoritative**: `ARCHITECTURE.md` (laws + de
 `BUILD_PLAN.md` (phases + exit gates), `TEST_PLAN.md`, `UX_DESIGN.md`, `TOOLING.md`.
 Record every change in `docs/CHANGELOG.md`.
 
-**Current phase: 1 (data foundation), approved as a whole (DEC-P1), built in slices 1a–1f.**
-Slices 1a (Kite auth, universe, daily extractor, validation, coverage gate), 1b (1-minute store +
-on-read derivation) and 1c (NSE archive, measured adjustments, drift re-check) are built.
-**The Phase-1 data-coverage gate was opened by the user on 2026-11-20 (DEC-GATE1).** The five 1d decisions were
-**locked on 2026-11-21** (DEC-1D-*): `websockets` + `pyarrow`; Full-mode ticks, compact schema, short hot window,
-fail-closed Parquet export; a narrow option chain; raw snapshots only (greeks in Phase 2); new slice 1f (F&O
-history from the archive). Tick sizing waits on the full-session probe. 1e (reference data) sources are
-**approved 2026-11-21** (DEC-1E-SOURCES, `docs/PROPOSAL_1E_SOURCES.md`): FII/DII = derivatives positioning only,
-GIFT Nifty + FRED instead of US futures, fundamentals-lite, `defusedxml` approved. NSE deals, PR text, RSS,
-calendar import, market cap, GIFT Nifty and India VIX history, and FRED are implemented. The user
-paused MCX commodities. CDS requires an exact sub-paisa storage decision. Live FRED ingestion requires the user's
-`FRED_API_KEY`. Decided 2026-11-21:
-**DEC-2015** (intraday analysis starts `INTRADAY_ANALYSIS_START` = 2016-01-01; 2015 1m kept, opt-in, badged) and
-**DEC-CORROB** (below).
+**Current phase: 1 (data foundation) closing, 5 (paper sandbox integration) starting 2026-11-22.**
+Phase 1 slices 1a–1c built + 1d/1e/1f mostly built (pending Monday 2026-11-23 Kite verification).
+**Phase 5 task sequence** (see `docs/PHASE_5_PLAN.md`): auto exits (1.1 built, tests ✅), then trailing stops, live marks, derivatives, Telegram approval. NSE CSV extraction on VPS is complete (27 participant file errors flagged for resolution 2026-11-22). Monday login required for tick verification + paper trading finish.
 
 ## Non-negotiable laws (ARCHITECTURE §2)
 
@@ -191,6 +180,15 @@ The ledger also covers forward-only bulk/block deals and PR-zip announcements an
 Publisher RSS is scheduled independently and respects feed TTL and refusals. FRED runs after daily ingestion
 when configured, and the economic calendar accepts authenticated imports of reviewed CSVs with source links.
 
+**Live data (1d, DEC-1D-*)** — `kite_ticks.py` (strict binary parser), `ticks.py` (WebSocket capture -> compact `app.ticks`),
+`tick_export.py` (Parquet export; a chunk is dropped ONLY after its file is read back and matches the database; no job drops ticks
+otherwise), `option_chain.py` (raw 5-minute snapshots, narrow scope), `tick_report.py` (status). Capture and chain jobs register only
+when Kite is configured. Greeks/IV are Phase 2, never stored as the only record.
+
+**F&O history (1f, DEC-1D-OWNERS)** — `app/data/nse_fo.py`, `fo_load.py`, `fo_report.py`: daily futures/options from NSE's F&O bhavcopy
+(old format to 2024, UDiFF from `FO_UDIFF_FROM`) into `app.fo_daily` (integer paisa; only contracts that traded or hold OI). Same
+archive rules as 1c/1e plus a size stop (`FO_DB_BUDGET_GB`). A thin contract's close outside its high-low is NSE's quirk: kept, counted.
+
 **Stock page (DEC-STOCKPAGE)** — `app/data/stock.py`, `/api/data/stock`, frontend `/stocks`: read-only, one stock's
 names, share-series actions vs Kite's measured prices, data health — reusing the gate's own queries so no number differs
 from Admin. Corporate actions count only share series EQ/BE/BZ (bonds/preference shares share the symbol). Pages are
@@ -199,6 +197,13 @@ full width.
 **Charts (DEC-CHART)** — `app/data/candles.py`, `/api/data/candles`, frontend `/charts`: openalgo-charts over
 FinTrack's own candles. The backend serves every interval (never re-bucket in the browser); Raw = as traded, for 1m/D/W
 equities only. The widget's studies are visual-only, never the engine; no `onOrder`.
+
+**Phase 2 analytics** live in `backend/app/analytics/`. `GET /api/analytics/indicators` reads
+finalized daily and intraday candles from the existing adjusted candle service, applies the
+benchmark calendar and minute-session quality, and exposes warm-up and freshness. The series use
+the current stored adjustment basis. `GET /api/analytics/options` derives research values from
+stored raw chains, exposes snapshot age and scope, and requires explicit rate and dividend
+assumptions for IV and Greeks. No analytics migrations or write jobs are required.
 
 **UI (DEC-UI)**: shadcn/ui components live in `frontend/src/components/ui/` (ours to edit; add more with
 `npx shadcn@4.23.0 add <name>`, then re-pin any package it bumps and keep `shadcn` itself out of `package.json`). Use theme
