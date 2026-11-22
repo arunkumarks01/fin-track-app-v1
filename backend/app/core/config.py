@@ -15,6 +15,11 @@ from typing import Literal
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.analytics.parameters import IndicatorPeriods
+from app.risk.parameters import PaperMode, RiskParameters, SizingMode
+from app.sandbox.parameters import PaperParameters
+from app.scoring.parameters import ScoringParameters
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ENV_FILE = REPO_ROOT / ".env"
 
@@ -56,6 +61,11 @@ class Settings(BaseSettings):
     api_host: str = "127.0.0.1"
     api_port: int = Field(default=8000, ge=1, le=65535)
 
+    paper_submode: PaperMode = "learning"
+    paper: PaperParameters = Field(default_factory=PaperParameters)
+    risk_sizing_mode: SizingMode = "fixed_risk"
+    risk: RiskParameters = Field(default_factory=RiskParameters)
+
     # --- auth ---
     api_auth_token: SecretStr
 
@@ -68,8 +78,53 @@ class Settings(BaseSettings):
     # --- timescale storage (Apache build: chunking + in-process retention job) ---
     ohlcv_chunk_interval_days: int = Field(default=30, ge=1)
     ticks_chunk_interval_hours: int = Field(default=24, ge=1)
-    ticks_retention_days: int = Field(default=90, ge=1)
-    ticks_retention_cron: str = "20 2 * * *"  # IST; daily, outside market hours
+    ticks_retention_cron: str = "20 2 * * *"  # IST; the daily Parquet export + verified cleanup
+    # --- slice 1d: live tick capture (DEC-1D-TICKS) ---
+    kite_ws_url: str = "wss://ws.kite.trade"
+    ticks_capture_cron: str = "58 8 * * 1-5"  # IST, a few minutes before the 09:00 pre-open
+    # capture window (IST): pre-open 09:00 .. post-close 16:00 (covers derivatives to 15:45
+    # from 2026-12-07 and the 15:50-16:00 post-close session)
+    ticks_capture_start: time = time(9, 0)
+    ticks_capture_end: time = time(16, 0)
+    ticks_flush_rows: int = Field(default=5000, ge=1)
+    ticks_flush_seconds: float = Field(default=2.0, gt=0)
+    ticks_buffer_max_rows: int = Field(
+        default=500_000, ge=1000
+    )  # oldest dropped (and counted) beyond
+    ticks_reconnect_backoff_seconds: float = Field(default=2.0, gt=0)
+    ticks_reconnect_max_seconds: float = Field(default=60.0, gt=0)
+    ticks_idle_timeout_seconds: float = Field(
+        default=30.0, gt=0
+    )  # Kite sends a heartbeat each second
+    ticks_extra_symbols: list[str] = Field(
+        default_factory=lambda: ["NSE:INDIA VIX", "NSEIX:GIFT NIFTY"]
+    )
+    # export: ticks older than this many days are written to Parquet, verified, then dropped
+    ticks_hot_days: int = Field(default=7, ge=1)
+    ticks_export_batch_rows: int = Field(default=100_000, ge=1000)
+    ticks_parquet_dir: Path = Path("data/ticks_parquet")
+    # --- slice 1d: option chain snapshots (DEC-1D-CHAIN) ---
+    chain_cron: str = "*/5 9-15 * * 1-5"  # IST; the job itself keeps to the window below
+    chain_start: time = time(9, 15)
+    chain_end: time = time(15, 30)
+    chain_index_underlyings: list[str] = Field(
+        default_factory=lambda: ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
+    )
+    chain_stock_count: int = Field(default=20, ge=0)
+    chain_stock_override: list[str] = Field(default_factory=list)  # use these instead of ranking
+    chain_rank_sessions: int = Field(default=20, ge=1)
+    chain_expiries: int = Field(default=2, ge=1, le=4)
+    chain_strikes_each_side: int = Field(default=15, ge=1, le=60)
+    chain_quote_batch: int = Field(default=250, ge=1, le=500)
+    # the spot instrument of each index underlying (stocks are NSE:<symbol>)
+    chain_index_spot: dict[str, str] = Field(
+        default_factory=lambda: {
+            "NIFTY": "NSE:NIFTY 50",
+            "BANKNIFTY": "NSE:NIFTY BANK",
+            "FINNIFTY": "NSE:NIFTY FIN SERVICE",
+            "MIDCPNIFTY": "NSE:NIFTY MID SELECT",
+        }
+    )
 
     # --- scheduler ---
     scheduler_misfire_grace_seconds: int = Field(default=60, ge=1)
@@ -82,6 +137,7 @@ class Settings(BaseSettings):
     kite_timeout_seconds: float = Field(default=15, gt=0)
     kite_historical_rps: float = Field(default=3.0, gt=0)  # Kite: 3 req/s historical
     kite_default_rps: float = Field(default=10.0, gt=0)  # Kite: 10 req/s other endpoints
+    kite_quote_rps: float = Field(default=1.0, gt=0)  # Kite: 1 req/s for /quote
     kite_max_retries: int = Field(default=3, ge=0)
     kite_retry_backoff_seconds: float = Field(default=1.0, ge=0)
     kite_session_expiry_hour_ist: int = Field(default=6, ge=0, le=23)  # regulatory 6 AM
@@ -118,6 +174,27 @@ class Settings(BaseSettings):
     daily_ingest_cron: str = "30 8 * * 1-6"  # IST, after next-day finality (Mon picks up Fri)
     job_history_size: int = Field(default=20, ge=1, le=200)  # runs kept in memory (Admin page)
     chart_max_bars: int = Field(default=5000, ge=100, le=50_000)  # per /api/data/candles page
+
+    # --- Phase 2 research analytics ---
+    shorts_enabled: bool = False
+    scoring: ScoringParameters = Field(default_factory=ScoringParameters)
+    scoring_news_enabled: bool = False
+    scoring_scan_enabled: bool = False
+    scoring_swing_morning_cron: str = "20 9 * * mon-fri"
+    scoring_swing_close_cron: str = "40 15 * * mon-fri"
+    scoring_intraday_cron: str = "*/5 9-15 * * mon-fri"
+
+    analytics_periods: IndicatorPeriods = Field(default_factory=IndicatorPeriods)
+    analytics_warmup_bars: int = Field(default=800, ge=0, le=5000)
+    analytics_max_result_bars: int = Field(default=500, ge=1, le=2000)
+    analytics_opening_range_minutes: int = Field(default=15, ge=1, le=120)
+    analytics_option_rate_bps: int | None = Field(default=None, ge=-2000, le=5000)
+    analytics_option_dividend_bps: int | None = Field(default=None, ge=0, le=5000)
+    analytics_option_vol_ceiling: float = Field(default=5.0, gt=0, le=20)
+    analytics_option_snapshot_max_age_seconds: int = Field(default=900, ge=1)
+    analytics_iv_tenor_days: int = Field(default=30, ge=1, le=90)
+    analytics_iv_history_calendar_days: int = Field(default=365, ge=30, le=730)
+    analytics_iv_min_observations: int = Field(default=20, ge=2, le=260)
 
     # --- intraday (Phase 1b, DEC-1B): 1-minute is the single stored source ---
     intraday_floor_date: date = date(2015, 1, 1)  # never request older (Kite's 1m starts ~2015)
@@ -204,6 +281,15 @@ class Settings(BaseSettings):
             "DEXINUS": ("INR per USD (noon buying rate)", "INR", 4),
         }
     )
+    # --- slice 1f: F&O history (NSE derivatives bhavcopy) ---
+    # old format (to 2024): <base>/<YYYY>/<MON>/fo<DD><MON><YYYY>bhav.csv.zip
+    nse_fo_old_base_url: str = "https://nsearchives.nseindia.com/content/historical/DERIVATIVES"
+    # UDiFF format: <base>/BhavCopy_NSE_FO_0_0_0_<YYYYMMDD>_F_0000.csv.zip
+    nse_fo_new_base_url: str = "https://nsearchives.nseindia.com/content/fo"
+    # first date the UDiFF file was verified to exist (both formats overlap through mid-2024)
+    fo_udiff_from: date = date(2024, 1, 2)
+    # the F&O history stops when the database reaches this size (it is the biggest table)
+    fo_db_budget_gb: float = Field(default=35.0, gt=0)
     # bulk.csv / block.csv: the latest session only (captured forward)
     nse_deals_base_url: str = "https://nsearchives.nseindia.com/content/equities"
     # after each daily run (and its NSE archive load), fetch the new days' reference files too
@@ -261,7 +347,15 @@ class Settings(BaseSettings):
         return True
 
     @field_validator(
-        "ticks_retention_cron", "daily_ingest_cron", "intraday_ingest_cron", "news_fetch_cron"
+        "ticks_retention_cron",
+        "daily_ingest_cron",
+        "intraday_ingest_cron",
+        "news_fetch_cron",
+        "ticks_capture_cron",
+        "chain_cron",
+        "scoring_swing_morning_cron",
+        "scoring_swing_close_cron",
+        "scoring_intraday_cron",
     )
     @classmethod
     def _valid_cron(cls, value: str) -> str:
