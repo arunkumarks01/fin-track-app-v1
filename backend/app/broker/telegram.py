@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Literal
 
 ApprovalStatus = Literal["pending", "approved", "rejected", "timed_out"]
