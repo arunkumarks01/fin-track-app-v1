@@ -328,6 +328,7 @@ async def test_reference_and_stock_endpoints_show_what_was_loaded(
         assert r["ledger"]["pr_text"]["ok"] == 3
         assert r["ledger"]["market_cap"]["ok"] == 1
         assert r["ledger"]["market_cap"]["missing"] == 1  # report existed only from 2024
+        assert r["ledger"]["fo_bhav"]["ok"] == 0
         assert r["sources"]["fred_key_configured"] is False
         assert [d["date"] for d in r["participants"]] == ["2026-11-20", "2026-11-19"]
         assert r["participants"][0]["oi"]["FII"]["fut_idx_short"] == 146318

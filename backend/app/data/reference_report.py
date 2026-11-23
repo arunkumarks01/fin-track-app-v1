@@ -8,6 +8,11 @@ from typing import Any
 from app.data.instruments import GIFT_NIFTY_SYMBOL, INDIA_VIX_SYMBOL, REFERENCE_INDEX_SYMBOLS
 from app.data.nse_reference import DATASETS, FIELDS
 
+# ``fo_bhav`` is loaded by the separate F&O history job.  It shares the
+# reference-files ledger with the Phase 1e sources, so the read-only status
+# view must recognise it even though it is not a selectable 1e ingest source.
+REFERENCE_LEDGER_DATASETS = (*DATASETS, "fo_bhav")
+
 
 def _iso(d: date | None) -> str | None:
     return d.isoformat() if d else None
@@ -31,7 +36,7 @@ async def reference_ledger(conn: Any) -> dict[str, Any]:
             "rejected": 0,
             "rounding_days": 0,
         }
-        for ds in DATASETS
+        for ds in REFERENCE_LEDGER_DATASETS
     }
     for r in rows:
         d = out[r["dataset"]]
