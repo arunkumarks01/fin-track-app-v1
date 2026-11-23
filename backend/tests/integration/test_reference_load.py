@@ -14,7 +14,7 @@ from app.broker.kite.client import RateLimiter
 from app.core.tradingdate import MARKET_TZ, canonical_daily_ts
 from app.data.instruments import UniverseMember, sync_universe
 from app.data.nse_archive import NseArchiveClient
-from app.data.reference_load import run_reference_load
+from app.data.reference_load import run_reference_load, store_participants
 from app.db.migrate import migrate
 from app.main import create_app
 from tests.conftest import build_settings
@@ -30,6 +30,30 @@ D19 = date(2026, 11, 19)
 D20 = date(2026, 11, 20)
 DAYS = [OLD, D19, D20]
 STEP1 = ["mto", "participant_oi", "participant_vol"]
+
+
+async def test_grouped_whole_participant_values_are_stored_exactly(db: Any) -> None:
+    await migrate(db)
+    source = VOL_2015.replace("290814,253340", '"2,90,814.00","253,340.0"')
+    day = date(2015, 1, 5)
+    async with db.transaction():
+        count, gap = await store_participants(db, "participant_vol", day, source.encode(), 0, NOW)
+    assert (count, gap) == (4, 0)
+    row = await db.fetchrow(
+        "SELECT fut_idx_long,fut_idx_short FROM app.participant_positions "
+        "WHERE trade_date=$1 AND kind='volume' AND client_type='Client'",
+        day,
+    )
+    assert (row["fut_idx_long"], row["fut_idx_short"]) == (290814, 253340)
+    assert (
+        await db.fetchval(
+            "SELECT status FROM app.reference_files WHERE dataset=$1 AND trade_date=$2",
+            "participant_vol",
+            day,
+        )
+        == "ok"
+    )
+
 
 BULK = (
     "Date,Symbol,Security Name,Client Name,Buy/Sell,Quantity Traded,"

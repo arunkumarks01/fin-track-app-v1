@@ -150,6 +150,30 @@ def test_participants_parse_four_rows_that_add_up() -> None:
     assert vol.rows[1].values[0] == 0  # DII index futures long that day: a real zero
 
 
+def test_participants_accept_exact_grouped_whole_counts_without_rounding() -> None:
+    day = date(2015, 1, 5)
+    expected = parse_participants(VOL_2015, day, "volume")
+    grouped = VOL_2015.replace("290814,253340,399112", '"2,90,814.00","253,340.0",399112')
+    assert parse_participants(grouped, day, "volume") == expected
+    for value in ('"2,90,814.01"', '"29,08,14.00"', '"2,90,814e0"'):
+        with pytest.raises(NseArchiveError, match="not whole numbers"):
+            parse_participants(VOL_2015.replace("290814", value, 1), day, "volume")
+
+
+def test_nse_2019_12_12_grouped_open_interest() -> None:
+    header = VOL_2015.splitlines()[1]
+    text = f"""Participant wise Open Interest (no. of contracts) in Equity Derivatives as on Dec 12 2019,,,,,,,,,,,,,,
+{header}
+Client,132884,121478,852086,235874,331931,442166,430741,645938,352477,161407,276243,167258,2272951,1877532
+DII,44358,32061,19010,1136150,16482,88576,0,0,120,0,503,0,168546,1168714
+FII,"80,776.00","85,065.00","10,02,064.00","5,92,359.00","1,60,130.00","2,59,324.00","56,814.00","92,463.00","17,905.00","16,627.00","19,575.00","12,823.00",1536826,859099
+Pro,14763,34177,191617,100394,111634,134462,132622,186127,60322,68345,134503,66298,581143,654121
+TOTAL,272781,272781,2064777,2064777,620177,924528,620177,924528,430824,246379,430824,246379,4559466,4559466
+"""
+    parsed = parse_participants(text, date(2019, 12, 12), "oi", tolerance=2)
+    assert parsed.rows[2].values[:3] == (80776, 85065, 1002064)
+
+
 def test_nse_oi_rounding_gap_is_accepted_within_tolerance_and_recorded() -> None:
     # the REAL 2026-11-20 file: participants' puts-short sum to 7,144,282, NSE's TOTAL says
     # 7,144,281 — off by one contract

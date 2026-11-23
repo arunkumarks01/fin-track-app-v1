@@ -186,6 +186,19 @@ class ParticipantRow:
     values: tuple[int, ...]  # in FIELDS order
 
 
+_WHOLE_CONTRACTS = re.compile(
+    r"(?:\d+|\d{1,3}(?:,\d{3})+|\d{1,3}(?:,\d{2})+,\d{3})(?:\.0+)?\Z",
+    re.ASCII,
+)
+
+
+def _participant_count(value: str) -> int:
+    """Parse an exact whole count, including NSE's quoted grouped .00 format."""
+    if _WHOLE_CONTRACTS.fullmatch(value) is None:
+        raise ValueError("not an exact, formatted whole number")
+    return int(value.partition(".")[0].replace(",", ""))
+
+
 def parse_participants(text: str, d: date, kind: str, tolerance: int = 0) -> ParticipantFile:
     """The four participant rows, or an error for the whole file (never a partial day).
     Totals may differ from the legs / the TOTAL row by at most `tolerance` contracts."""
@@ -245,7 +258,7 @@ def parse_participants(text: str, d: date, kind: str, tolerance: int = 0) -> Par
         if len(cells) != 1 + len(FIELDS):
             raise NseArchiveError(f"participant row {who!r} has {len(cells) - 1} values")
         try:
-            vals = tuple(int(c) for c in cells[1:])
+            vals = tuple(_participant_count(c) for c in cells[1:])
         except ValueError as exc:
             raise NseArchiveError(f"participant row {who!r} is not whole numbers") from exc
         if min(vals) < 0:

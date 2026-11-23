@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased] — NSE participant CSV exact counts
+
+- Accept quoted Indian- and western-grouped contract counts with an all-zero decimal
+  suffix, without rounding fractional counts. Validation of dates and source totals is
+  unchanged. Recovered the 12 December 2019 open-interest file after test-database
+  verification; the other 26 failed files remain flagged for source-data review.
+
 ## [Unreleased] — Phase 6 replay foundation
 
 - Added an offline single-symbol daily replay building block. Close-of-session instructions
