@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -156,11 +157,15 @@ async def _write_chunk(
             ):
                 rows.append(rec)
                 if len(rows) >= batch_rows:
-                    agg["full_hash"] = (agg["full_hash"] + _full_hash(_table(rows))) % (1 << 256)
+                    agg["full_hash"] = (
+                        agg["full_hash"] + await asyncio.to_thread(_full_hash, _table(rows))
+                    ) % (1 << 256)
                     await asyncio.to_thread(_write, writer, rows)
                     rows = []
             if rows:
-                agg["full_hash"] = (agg["full_hash"] + _full_hash(_table(rows))) % (1 << 256)
+                agg["full_hash"] = (
+                    agg["full_hash"] + await asyncio.to_thread(_full_hash, _table(rows))
+                ) % (1 << 256)
                 await asyncio.to_thread(_write, writer, rows)
         finally:
             await asyncio.to_thread(writer.close)
@@ -169,6 +174,18 @@ async def _write_chunk(
 
 def _write(writer: Any, rows: list[Any]) -> None:
     writer.write_table(_table(rows))
+
+
+def _promote(tmp: Path, final: Path) -> None:
+    """Flush the completed file and its directory entry before recording verification."""
+    with tmp.open("rb") as file:
+        os.fsync(file.fileno())
+    os.replace(tmp, final)
+    directory_fd = os.open(final.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 
 
 def _table(rows: list[Any]) -> pa.Table:
@@ -218,7 +235,19 @@ async def export_ready_chunks(pool: Any, settings: Settings, clock: Clock) -> Ex
         start, end = c["range_start"], c["range_end"]
         try:
             async with pool.acquire() as conn:
-                await _one_chunk(conn, start, end, directory, settings, now, report)
+                lock_key = f"fintrack:tick-export:{start.isoformat()}"
+                acquired = await conn.fetchval(
+                    "SELECT pg_try_advisory_lock(hashtextextended($1, 0))", lock_key
+                )
+                if not acquired:
+                    report.details.append(f"{start:%Y-%m-%d}: export already running")
+                    continue
+                try:
+                    await _one_chunk(conn, start, end, directory, settings, now, report)
+                finally:
+                    await conn.execute(
+                        "SELECT pg_advisory_unlock(hashtextextended($1, 0))", lock_key
+                    )
         except ExportMismatchError as exc:  # already recorded as 'mismatch' in the ledger
             report.failed += 1
             report.details.append(f"{start:%Y-%m-%d}: {exc}"[:200])
@@ -249,11 +278,13 @@ async def _one_chunk(
         start,
     )
     if prior and prior["dropped_at"]:
-        return  # done long ago
+        # A chunk with this range exists despite an earlier drop: a late writer may
+        # have recreated it. Never silently ignore it or overwrite the old archive.
+        raise ExportMismatchError("previously dropped chunk exists again; manual review required")
     final = _file_for(directory, start)
     # A fresh snapshot is required even if an earlier export was verified: late
     # writes may have changed the chunk since that verification.
-    tmp = final.with_suffix(".parquet.tmp")
+    tmp = final.with_name(f"{final.name}.{uuid4().hex}.tmp")
     try:
         db_agg = await _write_chunk(conn, start, end, tmp, settings.ticks_export_batch_rows)
         if db_agg["rows"] == 0:
@@ -266,7 +297,7 @@ async def _one_chunk(
                 detail="the Parquet file does not match the database — chunk kept",
             )  # fmt: skip
             raise ExportMismatchError("full-record checksum mismatch; chunk kept")
-        await asyncio.to_thread(os.replace, tmp, final)
+        await asyncio.to_thread(_promote, tmp, final)
     finally:
         await asyncio.to_thread(tmp.unlink, missing_ok=True)
     size = (await asyncio.to_thread(final.stat)).st_size

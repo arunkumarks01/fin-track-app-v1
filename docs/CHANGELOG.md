@@ -2,6 +2,13 @@
 
 ## [Unreleased] — Tick export integrity work
 
+- File promotion now flushes the completed Parquet file and containing directory before the
+  verification ledger is written. A per-chunk database advisory lock prevents two exporter
+  processes from promoting conflicting snapshots. Export temporary filenames are unique.
+  A previously dropped range that reappears is flagged instead of being ignored or
+  overwriting its archive.
+  The exporter still retains all chunks: protection against late tick writers and complete
+  crash recovery remain required before cleanup can be enabled.
 - Export verification now includes a duplicate-sensitive, order-independent digest of every
   tick field, including nulls, and always exports a fresh snapshot on retry. Even direct
   exporter calls retain database chunks; safe cleanup still needs a protocol for concurrent

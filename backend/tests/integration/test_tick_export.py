@@ -138,3 +138,60 @@ async def test_an_unwritable_directory_is_an_error_not_a_drop(
     assert (r.dropped, r.failed) == (0, 1)
     assert await db.fetchval("SELECT count(*) FROM app.ticks") == 251
     assert await db.fetchval("SELECT status FROM app.tick_exports") == "error"
+
+
+async def test_promotion_failure_keeps_chunk_and_does_not_verify(
+    pool: Any, db: Any, test_dsn: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _seed(db)
+
+    def fail_promotion(tmp: Path, final: Path) -> None:
+        raise OSError("simulated fsync failure")
+
+    monkeypatch.setattr(tick_export, "_promote", fail_promotion)
+    result = await export_ready_chunks(pool, _settings(test_dsn, tmp_path), FrozenClock(NOW))
+    assert (result.verified, result.dropped, result.failed) == (0, 0, 1)
+    assert await db.fetchval("SELECT count(*) FROM app.ticks") == 251
+    assert await db.fetchval("SELECT status FROM app.tick_exports") == "error"
+    assert not _files(tmp_path, "*.tmp")
+
+
+async def test_second_export_does_not_overwrite_running_export(
+    pool: Any, db: Any, test_dsn: str, tmp_path: Path
+) -> None:
+    await _seed(db)
+    start = await db.fetchval(
+        """SELECT range_start FROM timescaledb_information.chunks
+           WHERE hypertable_schema='app' AND hypertable_name='ticks'
+             AND range_end <= $1 ORDER BY range_start LIMIT 1""",
+        NOW - timedelta(days=7),
+    )
+    key = f"fintrack:tick-export:{start.isoformat()}"
+    async with pool.acquire() as conn:
+        await conn.execute("SELECT pg_advisory_lock(hashtextextended($1, 0))", key)
+        try:
+            result = await export_ready_chunks(
+                pool, _settings(test_dsn, tmp_path), FrozenClock(NOW)
+            )
+            assert result.verified == 0
+            assert any("already running" in detail for detail in result.details)
+            assert await db.fetchval("SELECT count(*) FROM app.ticks") == 251
+            assert not _files(tmp_path, "*.parquet")
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock(hashtextextended($1, 0))", key)
+
+
+async def test_previously_dropped_range_is_not_silently_overwritten(
+    pool: Any, db: Any, test_dsn: str, tmp_path: Path
+) -> None:
+    await _seed(db)
+    first = await export_ready_chunks(pool, _settings(test_dsn, tmp_path), FrozenClock(NOW))
+    assert first.verified == 1
+    archive = _files(tmp_path, "*.parquet")[0]
+    original = archive.read_bytes()
+    await db.execute("UPDATE app.tick_exports SET dropped_at=$1", NOW)
+    again = await export_ready_chunks(pool, _settings(test_dsn, tmp_path), FrozenClock(NOW))
+    assert (again.verified, again.dropped, again.failed) == (0, 0, 1)
+    assert "manual review required" in again.details[0]
+    assert archive.read_bytes() == original
+    assert await db.fetchval("SELECT count(*) FROM app.ticks") == 251
