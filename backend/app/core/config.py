@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     db_pool_min_size: int = Field(default=1, ge=1)
     db_pool_max_size: int = Field(default=10, ge=1)
     db_connect_timeout_seconds: float = Field(default=10, gt=0)
+    # Bound stalled database work and abandoned transactions on every pooled connection.
+    db_statement_timeout_ms: int = Field(default=900_000, ge=1)
+    db_lock_timeout_ms: int = Field(default=10_000, ge=1)
+    db_idle_transaction_timeout_ms: int = Field(default=600_000, ge=1)
 
     # --- timescale storage (Apache build: chunking + in-process retention job) ---
     ohlcv_chunk_interval_days: int = Field(default=30, ge=1)
@@ -81,7 +85,7 @@ class Settings(BaseSettings):
     ticks_retention_cron: str = "20 2 * * *"  # IST; the daily Parquet export + verified cleanup
     # --- slice 1d: live tick capture (DEC-1D-TICKS) ---
     kite_ws_url: str = "wss://ws.kite.trade"
-    ticks_capture_cron: str = "58 8 * * 1-5"  # IST, a few minutes before the 09:00 pre-open
+    ticks_capture_cron: str = "58 8 * * mon-fri"  # IST, before the 09:00 pre-open
     # capture window (IST): pre-open 09:00 .. post-close 16:00 (covers derivatives to 15:45
     # from 2026-12-07 and the 15:50-16:00 post-close session)
     ticks_capture_start: time = time(9, 0)
@@ -104,7 +108,7 @@ class Settings(BaseSettings):
     ticks_export_batch_rows: int = Field(default=100_000, ge=1000)
     ticks_parquet_dir: Path = Path("data/ticks_parquet")
     # --- slice 1d: option chain snapshots (DEC-1D-CHAIN) ---
-    chain_cron: str = "*/5 9-15 * * 1-5"  # IST; the job itself keeps to the window below
+    chain_cron: str = "*/5 9-15 * * mon-fri"  # IST; the job itself keeps to the window below
     chain_start: time = time(9, 15)
     chain_end: time = time(15, 30)
     chain_index_underlyings: list[str] = Field(
@@ -171,7 +175,7 @@ class Settings(BaseSettings):
     # evening is provisional (seen 2026-11-19: 223/224 closes changed by 08:05 next day).
     # Session D's 1d bar is final from D+1 at this IST time (margin left past the 08:05 seen).
     daily_bar_final_next_day_ist: time = time(8, 15)
-    daily_ingest_cron: str = "30 8 * * 1-6"  # IST, after next-day finality (Mon picks up Fri)
+    daily_ingest_cron: str = "30 8 * * mon-sat"  # IST, after next-day finality
     job_history_size: int = Field(default=20, ge=1, le=200)  # runs kept in memory (Admin page)
     chart_max_bars: int = Field(default=5000, ge=100, le=50_000)  # per /api/data/candles page
 
@@ -213,7 +217,7 @@ class Settings(BaseSettings):
     intraday_benchmarks: dict[str, str] = Field(
         default_factory=lambda: {"NSE": "NSE:NIFTY 50", "BSE": "BSE:SENSEX"}
     )
-    intraday_ingest_cron: str = "40 16 * * 1-5"  # IST
+    intraday_ingest_cron: str = "40 16 * * mon-fri"  # IST
     # 1m bars are final the same evening (re-fetched next morning: identical, 2026-11-19)
     intraday_final_after_ist: time = time(16, 0)
     # per-instrument session calendar (revised DEC-1B): own norm, persistent re-baseline,

@@ -163,6 +163,7 @@ class TickCapture:
         )
 
     async def run(self) -> CaptureStats:
+        self._stop.clear()
         now = self._clock.now()
         st = self.stats = CaptureStats(
             status="running", session_date=now.astimezone(MARKET_TZ).date(), started_at=now
@@ -188,7 +189,11 @@ class TickCapture:
                 )
             _, until = self.window(now)
             await self._capture(tokens, until, st)
-            st.status = "ok"
+            if st.buffered or st.dropped or st.detail:
+                st.status = "failed"
+                st.detail = st.detail or f"{st.dropped} rows dropped while buffering"
+            else:
+                st.status = "ok"
         except asyncio.CancelledError:
             st.status, st.detail = "failed", "cancelled"
             raise
@@ -301,7 +306,6 @@ class TickCapture:
                         st.rejected += 1
                         continue
                     buf.add(row)
-                    st.ticks += 1
                     st.last_tick_at = now
             st.buffered = len(buf.rows)
             if (
@@ -321,6 +325,7 @@ class TickCapture:
                     "ticks", schema_name="app", columns=COLUMNS, records=batch
                 )
         except Exception as exc:  # the database is unreachable: keep the rows and retry
+            st.buffered = len(buf.rows)
             log.warning(
                 "ticks: could not write %d rows (%s); kept in memory",
                 len(batch),
@@ -330,6 +335,7 @@ class TickCapture:
                 st.detail = f"{len(buf.rows)} buffered rows were not written: {type(exc).__name__}"
             return
         del buf.rows[: len(batch)]  # only what was written; newer rows stay
+        st.ticks += len(batch)
         st.buffered = len(buf.rows)
 
 

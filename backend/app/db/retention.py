@@ -1,9 +1,10 @@
-"""Retention fallback for the Apache TimescaleDB build (D25).
+"""Tick retention safeguards for the Apache TimescaleDB build (D25).
 
-`add_retention_policy` is TSL-only, so retention is an in-process scheduled job calling
-`drop_chunks` (Apache-licensed). Whole chunks are dropped — rows newer than the cutoff are
-never touched, so a chunk straddling the cutoff survives until it fully ages out.
+`add_retention_policy` is TSL-only. The low-level `drop_chunks` helper is available for
+explicit maintenance, but must not be used as an unverified scheduled retention policy.
 
+Automatic deletion is suspended until the verified Parquet export is restored. Historical
+data must not be discarded solely because it is older than a retention cutoff.
 `ohlcv_candles` is never pruned: daily history back to 2015 must survive.
 """
 
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from app.core.clock import Clock
@@ -38,13 +39,8 @@ async def drop_expired_chunks(conn: Any, table: str, cutoff: datetime) -> list[s
 def ticks_cleanup_job(
     pool: Any, clock: Clock, settings: Settings
 ) -> Callable[[], Awaitable[list[str]]]:
-    retention = timedelta(days=settings.ticks_hot_days)
-
     async def run() -> list[str]:
-        cutoff = clock.now() - retention
-        async with pool.acquire() as conn:
-            dropped = await drop_expired_chunks(conn, TICKS_TABLE, cutoff)
-        log.info("ticks retention: dropped %d chunk(s) older than %s", len(dropped), cutoff)
-        return dropped
+        log.warning("Tick cleanup suspended: verified Parquet export is unavailable")
+        return []
 
     return run

@@ -1,5 +1,40 @@
 # Changelog
 
+## [Unreleased] — Backtest learning preview
+
+- Added an explicitly fictional four-trade example that explains return, win rate and
+  drawdown. Values are computed from the same example trades; no backtest engine or real
+  results are implied. The preview can be developed alongside Phase 6.
+- Deployed the current backend and frontend as separate single-process VPS systemd
+  services. The F&O import was stopped cleanly on the local backend and resumed from its
+  committed ledger on the VPS. The database and services remain private to the VPS;
+  access to the frontend is through the existing email-allowlisted Google gate.
+
+## [Unreleased] — VPS UI preview
+
+- Built the current frontend on the VPS and exposed it at fintrack.arunkumarks.com behind
+  the existing Google sign-in gate, restricted to its configured email allowlist. The
+  initial preview used a temporary SSH tunnel; the later VPS deployment replaces it.
+
+## [Unreleased] — Phase 1–5 work in progress
+
+- Connected tick capture, option-chain and scanner jobs to application services, with
+  schedules for configured Kite and enabled scanners. Corrected default weekday crons.
+- Capture now reports buffered, dropped or interrupted rows as a failed run. Restored the
+  native CI workflow and added scheduling and test-database integration checks.
+- Automatic tick cleanup remains suspended: full-field export verification and concurrent
+  writer protection remain unfinished. See `PHASE_1_5_HANDOFF.md` for remaining work and
+  separate live-market acceptance. No phase exit gate is claimed by these changes.
+
+## [Unreleased] — Recovered feature startup integration
+
+- Registered the recovered analytics, scoring and paper routers in the main app and
+  initialized the shared news-research service used by candidate routes.
+- Preserved configurable database timeouts and corrected exit-trigger prices/quantities.
+  Scheduled age-only tick deletion remains suspended pending export-path verification.
+- The full feature push is imported. Earlier reports of absent feature modules no longer
+  describe this checkout; the recovered implementation still requires integration review.
+
 ## [Unreleased] — Phase 5.1: Automatic exits (2026-11-22)
 
 - **Task 1 (auto exits) complete.** Built `app.sandbox.exits`: detect when a filled order's SL or target is hit in a bar, generate exit order. Exit detector checks SL first (stop_hit reason), then target (target_hit reason). Exit instruction reverses side + quantity, always MARKET. P&L calculated as (exit−entry)×qty−fees. Detector supports trailing SL override (Phase 5.2 builds on this).

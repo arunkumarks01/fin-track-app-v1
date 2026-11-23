@@ -46,17 +46,17 @@ def detect_exit(
     # Stop hit (checked first).
     if sl is not None:
         if buy and bar.low <= sl:
-            return ExitTrigger("stop_hit", price=max(bar.open, sl))
-        elif not buy and bar.high >= sl:
             return ExitTrigger("stop_hit", price=min(bar.open, sl))
+        elif not buy and bar.high >= sl:
+            return ExitTrigger("stop_hit", price=max(bar.open, sl))
 
     # Target hit (only if no stop).
     target = order.risk_target_paisa
     if target is not None:
         if buy and bar.high >= target:
-            return ExitTrigger("target_hit", price=min(bar.open, target))
-        elif not buy and bar.low <= target:
             return ExitTrigger("target_hit", price=max(bar.open, target))
+        elif not buy and bar.low <= target:
+            return ExitTrigger("target_hit", price=min(bar.open, target))
 
     return None
 
@@ -64,21 +64,22 @@ def detect_exit(
 def exit_instruction(
     original: Instruction,
     trigger: ExitTrigger,
+    filled_qty: int,
 ) -> Instruction:
     """
     Generate an exit order from a filled order and a trigger.
 
-    Exit is always MARKET, same symbol, reverse side, same quantity.
-    Exit price is embedded in the trigger (actual price will be matched in bar replay).
+    Exit is always MARKET, same symbol, reverse side and the open filled quantity.
+    The caller must execute using the trigger price and its fill model, not the bar open.
     """
-    if original.quantity <= 0:
-        raise ValueError("Cannot exit with quantity <= 0")
+    if not 0 < filled_qty <= original.quantity:
+        raise ValueError("Exit quantity must be positive and not exceed original quantity")
 
     return Instruction(
         symbol=original.symbol,
         side="sell" if original.side == "buy" else "buy",
         kind="market",
-        quantity=original.quantity,
+        quantity=filled_qty,
         limit_paisa=None,
         trigger_paisa=None,
         risk_stop_paisa=None,

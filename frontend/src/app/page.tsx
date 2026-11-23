@@ -9,8 +9,8 @@ export default function Home() {
       <div>
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         <p className="text-muted-foreground">
-          Phase 1 — data foundation. No scores or trades exist yet: nothing is scored until the
-          coverage gate passes.
+          Research and paper trading workspace. Data coverage and trading features are still being
+          verified.
         </p>
       </div>
       <MarketOverview />

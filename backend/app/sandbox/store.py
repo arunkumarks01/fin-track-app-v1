@@ -578,6 +578,6 @@ async def _process_phase5_exits(
         current_stop_paisa=instruction.risk_stop_paisa,
     )
     if trigger:
-        return exit_instruction(instruction, trigger).model_dump()
+        return exit_instruction(instruction, trigger, filled_qty).model_dump()
 
     return None

@@ -21,5 +21,8 @@ async def create_pool(settings: Settings) -> Any:
             "application_name": APPLICATION_NAME,
             "search_path": "app,public",
             "timezone": "UTC",
+            "statement_timeout": str(settings.db_statement_timeout_ms),
+            "lock_timeout": str(settings.db_lock_timeout_ms),
+            "idle_in_transaction_session_timeout": str(settings.db_idle_transaction_timeout_ms),
         },
     )

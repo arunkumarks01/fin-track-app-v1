@@ -4,6 +4,10 @@
 > phase. This defines the layers, tooling, the per-build-phase gates, and the harnesses.
 > Consistent with ARCHITECTURE.md §11 and BUILD_PLAN exit gates.
 
+> Recovery status: the Phase 5 exit-flow and store-integration files contain skipped
+> placeholders. They are not exit-gate evidence. The restored CI workflow also needs a
+> successful hosted run; remaining integration work is listed in PHASE_1_5_HANDOFF.md.
+
 ## Principles
 1. **Determinism or nothing** — frozen clock, mocked Kite/LLM/network, in-memory cache. No test depends on wall-clock or live data.
 2. **Golden + regression** — golden = "is this number correct" (vs a reference lib); regression = "did an output change vs the last blessed run." You need both (v1's MA bug was correct-type but wrong-value, and nothing noticed it changed).

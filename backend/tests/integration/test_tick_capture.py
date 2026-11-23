@@ -205,6 +205,10 @@ async def test_rows_stay_buffered_when_the_database_is_unreachable_and_overflow_
     assert (buf.rows, buf.dropped) == ([(2,), (3,), (4,)], 2)  # the oldest went, and was counted
     await cap._flush(buf, cap.stats)
     assert buf.rows == [(2,), (3,), (4,)]  # a failed write keeps everything for the next try
+    await cap._flush(buf, cap.stats, final=True)
+    assert cap.stats.buffered == 3
+    assert cap.stats.detail is not None
+    assert "not written" in cap.stats.detail
 
 
 def test_a_tick_that_does_not_fit_its_columns_has_no_row() -> None:

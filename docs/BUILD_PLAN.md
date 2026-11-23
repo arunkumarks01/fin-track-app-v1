@@ -5,6 +5,11 @@
 > must be green before the next starts — that discipline is what prevents a fixing spree.
 > Decisions locked in DECISIONS.md; design in ARCHITECTURE.md.
 
+> Current recovery status: feature code through Phase 5 is present, but presence is not
+> exit-gate evidence. Tick export integrity, live intraday inputs, account-aware risk and
+> paper execution have unresolved implementation gaps. See PHASE_1_5_HANDOFF.md; older
+> dated implementation notes below are historical and do not close these gates.
+
 ## The rule
 Trust is bottom-up: clean data → correct indicators → correct scoring → sound risk → honest
 fills → honest backtest → honest UI → forward-test → live. No phase starts until the phase

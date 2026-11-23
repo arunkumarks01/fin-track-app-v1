@@ -70,6 +70,24 @@ async def test_health_ok_without_token(make_settings: SettingsFactory) -> None:
     }
 
 
+@pytest.mark.parametrize("path", ["/api/analytics/indicators", "/api/scoring/candidates"])
+async def test_research_routes_are_registered(make_settings: SettingsFactory, path: str) -> None:
+    async with _client(_app(make_settings)) as c:
+        result = await c.get(path)
+    # Missing required symbol is validated before database access; a missing route is 404.
+    assert result.status_code == 422
+
+
+async def test_paper_route_is_registered_and_authenticated(make_settings: SettingsFactory) -> None:
+    async with _client(_app(make_settings)) as c:
+        result = await c.post("/api/paper/accounts", json={})
+        authorized = await c.post(
+            "/api/paper/accounts", json={}, headers={"Authorization": f"Bearer {TEST_TOKEN}"}
+        )
+    assert result.status_code == 401
+    assert authorized.status_code == 422
+
+
 @pytest.mark.parametrize(("db_fail", "sched"), [(True, True), (False, False)])
 async def test_health_is_honest_when_degraded(
     make_settings: SettingsFactory, db_fail: bool, sched: bool

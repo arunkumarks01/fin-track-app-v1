@@ -74,7 +74,7 @@ async def process_exits_and_marks(
     # Detect exit (SL or target hit)
     trigger = detect_exit(instruction, bar, filled_qty, current_stop_paisa=current_stop)
     if trigger:
-        exit_ord = exit_instruction(instruction, trigger)
+        exit_ord = exit_instruction(instruction, trigger, filled_qty)
         return True, exit_ord.model_dump()
 
     # Update position mark price

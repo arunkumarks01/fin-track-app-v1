@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.core.scheduler import build_scheduler, register_job
@@ -10,6 +11,22 @@ from tests.conftest import SettingsFactory
 
 async def _noop() -> None:
     return None
+
+
+def test_default_market_schedules_include_monday_and_exclude_weekend(
+    make_settings: SettingsFactory,
+) -> None:
+    from datetime import datetime
+
+    cfg = make_settings()
+    monday = datetime(2026, 11, 23, 0, 0, tzinfo=MARKET_TZ)
+    saturday = datetime(2026, 11, 28, 0, 0, tzinfo=MARKET_TZ)
+    for expression in (cfg.ticks_capture_cron, cfg.chain_cron, cfg.intraday_ingest_cron):
+        trigger = CronTrigger.from_crontab(expression, timezone=MARKET_TZ)
+        assert trigger.get_next_fire_time(None, monday).weekday() == 0
+        assert trigger.get_next_fire_time(None, saturday).weekday() == 0
+    daily = CronTrigger.from_crontab(cfg.daily_ingest_cron, timezone=MARKET_TZ)
+    assert daily.get_next_fire_time(None, saturday).weekday() == 5
 
 
 async def test_jobs_get_single_instance_and_coalesce(make_settings: SettingsFactory) -> None:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import pytest
 
 from app.sandbox.exits import ExitTrigger, detect_exit, exit_instruction, realized_pnl
@@ -10,6 +12,38 @@ from app.sandbox.model import Bar, Instruction
 
 class TestExitDetection:
     """Exit trigger detection: SL and target."""
+
+    @pytest.mark.parametrize(
+        ("side", "stop", "target", "bar", "reason", "price"),
+        [
+            ("buy", 100, 130, Bar(90, 95, 85, 90, 100), "stop_hit", 90),
+            ("buy", 100, 130, Bar(110, 120, 95, 100, 100), "stop_hit", 100),
+            ("buy", 100, 130, Bar(140, 145, 135, 140, 100), "target_hit", 140),
+            ("sell", 130, 100, Bar(140, 145, 135, 140, 100), "stop_hit", 140),
+            ("sell", 130, 100, Bar(120, 135, 110, 130, 100), "stop_hit", 130),
+            ("sell", 130, 100, Bar(90, 95, 85, 90, 100), "target_hit", 90),
+        ],
+    )
+    def test_gap_and_intraday_exit_prices(
+        self,
+        side: Literal["buy", "sell"],
+        stop: int,
+        target: int,
+        bar: Bar,
+        reason: Literal["stop_hit", "target_hit"],
+        price: int,
+    ) -> None:
+        # model_construct exercises the short-side detector while short orders are gated.
+        order = Instruction.model_construct(
+            symbol="NSE:RELIANCE",
+            side=side,
+            kind="market",
+            quantity=10,
+            risk_stop_paisa=stop,
+            risk_target_paisa=target,
+        )
+        trigger = detect_exit(order, bar, filled_qty=10)
+        assert trigger == ExitTrigger(reason=reason, price=price)
 
     def test_buy_stop_hit_in_bar_low(self) -> None:
         """Buy order: SL at 2000, bar low 1950 → stop hit at 1950."""
@@ -27,8 +61,7 @@ class TestExitDetection:
         trigger = detect_exit(order, bar, filled_qty=10)
         assert trigger is not None
         assert trigger.reason == "stop_hit"
-        # Exit price = max(open, sl) = max(2100, 2000) = 2100
-        assert trigger.price == 210000
+        assert trigger.price == 200000
 
     def test_buy_target_hit_in_bar_high(self) -> None:
         """Buy order: target at 2200, bar high 2250 → target hit at 2200."""
@@ -46,8 +79,7 @@ class TestExitDetection:
         trigger = detect_exit(order, bar, filled_qty=10)
         assert trigger is not None
         assert trigger.reason == "target_hit"
-        # Exit price = min(open, target) = min(2100, 2200) = 2100
-        assert trigger.price == 210000
+        assert trigger.price == 220000
 
     def test_buy_stop_checked_before_target(self) -> None:
         """Buy order: both SL and target hit in same bar → SL takes precedence."""
@@ -156,6 +188,14 @@ class TestExitDetection:
 class TestExitInstruction:
     """Exit order generation."""
 
+    def test_exit_quantity_uses_the_filled_position(self) -> None:
+        order = Instruction(symbol="NSE:RELIANCE", side="buy", kind="market", quantity=10)
+        trigger = ExitTrigger(reason="stop_hit", price=100)
+        assert exit_instruction(order, trigger, 4).quantity == 4
+        for invalid in (0, 11):
+            with pytest.raises(ValueError, match="Exit quantity"):
+                exit_instruction(order, trigger, invalid)
+
     def test_buy_exit_is_sell_market(self) -> None:
         """Exit from a buy order is a MARKET sell."""
         order = Instruction(
@@ -169,7 +209,7 @@ class TestExitInstruction:
             risk_target_paisa=220000,
         )
         trigger = ExitTrigger(reason="stop_hit", price=200000)
-        exit_ord = exit_instruction(order, trigger)
+        exit_ord = exit_instruction(order, trigger, 10)
         assert exit_ord.side == "sell"
         assert exit_ord.kind == "market"
         assert exit_ord.quantity == 10
@@ -196,7 +236,7 @@ class TestExitInstruction:
             risk_target_paisa=220000,
         )
         trigger = ExitTrigger(reason="target_hit", price=210000)
-        exit_ord = exit_instruction(order, trigger)
+        exit_ord = exit_instruction(order, trigger, 10)
         # For a buy order, exit is sell; for a sell order, exit would be buy.
         assert exit_ord.side == "sell"
         assert exit_ord.kind == "market"

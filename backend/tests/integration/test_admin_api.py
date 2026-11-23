@@ -21,6 +21,38 @@ NOW = datetime(2026, 11, 18, 18, 0, tzinfo=MARKET_TZ)
 TS = datetime(2026, 11, 17, 0, 0, tzinfo=MARKET_TZ)
 
 
+async def test_configured_services_are_scheduled_and_require_a_kite_session(
+    db: Any, test_dsn: str
+) -> None:
+    await migrate(db)
+    settings = build_settings(
+        database_url=test_dsn,
+        kite_api_key="test-key-123",
+        kite_api_secret="test-secret-123",
+        scoring_scan_enabled=True,
+    )
+    app = create_app(settings, clock=FrozenClock(datetime(2026, 11, 23, 10, tzinfo=MARKET_TZ)))
+    async with app.router.lifespan_context(app):
+        jobs = {job.id for job in app.state.scheduler.get_jobs()}
+        assert {
+            "ticks_capture",
+            "option_chain",
+            "scoring_swing_morning",
+            "scoring_swing_close",
+            "scoring_intraday",
+        } <= jobs
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            for name in ("ticks_capture", "option_chain"):
+                response = await client.post(
+                    f"/api/admin/jobs/{name}/start",
+                    headers={"Authorization": f"Bearer {TEST_TOKEN}"},
+                )
+                assert response.status_code == 409
+                assert "session" in response.json()["detail"]
+
+
 async def test_overview_reports_jobs_quarantine_flags_and_cursor_errors(
     db: Any, test_dsn: str
 ) -> None:
@@ -70,6 +102,9 @@ async def test_overview_reports_jobs_quarantine_flags_and_cursor_errors(
     assert datetime.fromisoformat(body["history_since"]) == NOW
     assert body["job_running"] is False
     assert body["runs"] == []  # in-memory history starts empty on boot (said honestly)
+    assert {"ticks_capture", "option_chain", "scoring_swing", "scoring_intraday"} <= set(
+        body["operable_jobs"]
+    )
     sched = body["scheduler"]
     assert sched["running"] is True
     assert [j["id"] for j in sched["jobs"]] == [
