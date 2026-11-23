@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased] — Phase 6 replay performance foundation
+
+- Added a deterministic performance summary for causal replay output: marked ending equity,
+  net return, chronological drawdown, realized wins/losses and profit factor. Profit factor
+  is intentionally unavailable until a replay has a realized loss, avoiding an artificial
+  infinity on an incomplete sample.
+- Unit checks cover the shared paper-cost model and open-position reporting boundary. This is
+  offline backtest infrastructure, not a strategy runner, portfolio backtest or Phase 6 gate.
+
 ## [Unreleased] — Conservative paper trailing stops
 
 - Realistic equity paper orders can persist an optional trailing-stop distance. A final daily
