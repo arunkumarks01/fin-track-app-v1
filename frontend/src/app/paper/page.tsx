@@ -19,8 +19,8 @@ export default async function PaperPage({
         </p>
       </header>
       <aside className="rounded-xl border border-warn/50 bg-warn/10 p-4 text-sm" role="note">
-        Automatic stop and target exits are not yet verified. A risk level on an order does not
-        reliably close a position; review your paper positions and submit exits manually.
+        Automatic stop and target exits are currently unavailable. Risk levels on an order do not
+        close a position; review your paper positions and submit exits manually.
       </aside>
       <PaperWorkspace symbol={symbol} />
     </div>

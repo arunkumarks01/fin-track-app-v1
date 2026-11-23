@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased] — Paper replay safeguards
+
+- Replay now stops without advancing when a held equity lacks a current-session mark, instead
+  of silently carrying a stale mark into the next day. A test-database API test verifies that
+  positions, cash and the replay cursor remain unchanged.
+- Removed an incomplete automatic-exit hook that suppressed exceptions and could submit a
+  misleading order using the wrong day's execution path. The workspace now states explicitly
+  that automatic stops and targets are unavailable. Implementing and verifying those exits,
+  trailing stops, live marks and derivative execution remains open Phase 5 work.
+- Full database-marked suite on the dedicated `_test` database: 179 passed, two skipped
+  placeholders for automatic-exit integration. Offline backend suite: 513 passed. These
+  results do not close the phase exit gates.
+
 ## [Unreleased] — Experimental tick retirement transaction
 
 - Added an unscheduled, internal retirement operation. It serializes against other exporters,
