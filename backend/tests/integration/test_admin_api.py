@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from app.core.tradingdate import MARKET_TZ
+from app.data.participant_exact import import_archived
 from app.data.participant_review import retain_participant_source
 from app.db.migrate import migrate
 from app.main import create_app
@@ -21,6 +22,32 @@ pytestmark = pytest.mark.db
 
 NOW = datetime(2026, 11, 18, 18, 0, tzinfo=MARKET_TZ)
 TS = datetime(2026, 11, 17, 0, 0, tzinfo=MARKET_TZ)
+
+
+async def test_exact_import_rejects_checksum_mismatch_without_inserting_values(db: Any) -> None:
+    from datetime import date
+
+    await migrate(db)
+    day = date(2015, 1, 5)
+    await db.execute(
+        "INSERT INTO app.reference_files(dataset,trade_date,status,detail,fetched_at) "
+        "VALUES ('participant_vol',$1,'error','failed',$2)",
+        day,
+        NOW,
+    )
+    await db.execute(
+        "INSERT INTO app.participant_source_review "
+        "(dataset,trade_date,source_url,source_sha256,source_bytes,validation_error,captured_at) "
+        "VALUES ('participant_vol',$1,'https://example.test',$2,$3,'failed',$4)",
+        day,
+        "0" * 64,
+        VOL_2015.encode(),
+        NOW,
+    )
+    result = await import_archived(db, NOW)
+    assert result["inserted"] == 0
+    assert result["failures"][0]["error"] == "Archived source checksum mismatch"
+    assert await db.fetchval("SELECT count(*) FROM app.participant_exact_rows") == 0
 
 
 async def test_participant_review_reports_exact_quarantined_values(db: Any, test_dsn: str) -> None:
@@ -44,12 +71,33 @@ async def test_participant_review_reports_exact_quarantined_values(db: Any, test
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c,
     ):
         response = await c.get("/api/admin/participant-review")
+        assert (await c.post("/api/admin/participant-review/import")).status_code == 401
+        auth = {"Authorization": f"Bearer {TEST_TOKEN}"}
+        imported = await c.post("/api/admin/participant-review/import", headers=auth)
+        assert imported.status_code == 200
+        assert imported.json()["inserted"] == 1
+        assert imported.json()["failures"] == []
+        retry = await c.post("/api/admin/participant-review/import", headers=auth)
+        assert retry.json()["already_imported"] == 1
+        assert (await c.get("/api/admin/participant-review")).json()["files"][0]["stored_exact"]
     assert response.status_code == 200
     [item] = response.json()["files"]
     assert item["status"] == "quarantined"
+    assert item["stored_exact"] is False
     assert item["analysis"]["date_status"] == "verified"
     assert item["analysis"]["rows"]["Client"]["fut_idx_long"] == "290814.3333"
     assert item["analysis"]["source_total_differences"]["Client.long"] == "-0.3333"
+    from decimal import Decimal
+
+    assert await db.fetchval(
+        "SELECT values_exact[1] FROM app.participant_exact_rows WHERE client_type='Client'"
+    ) == Decimal("290814.3333")
+    assert await db.fetchval("SELECT count(*) FROM app.participant_exact_rows") == 5
+    assert (
+        await db.fetchval("SELECT status FROM app.reference_files WHERE trade_date=$1", day)
+        == "error"
+    )
+    assert await db.fetchval("SELECT count(*) FROM app.participant_positions") == 0
 
 
 async def test_configured_services_are_scheduled_and_require_a_kite_session(

@@ -21,6 +21,7 @@ from app.api.data import (
 from app.core.tradingdate import MARKET_TZ
 from app.data.jobs import IngestRunner
 from app.data.participant_diagnostics import analyze_source
+from app.data.participant_exact import import_archived
 
 router = APIRouter(prefix="/api/admin")
 
@@ -31,7 +32,10 @@ async def participant_review(request: Request) -> JSONResponse:
     async with request.app.state.pool.acquire() as conn:
         rows = await conn.fetch(
             """SELECT DISTINCT ON (q.dataset,q.trade_date) q.dataset,q.trade_date,
-                      q.source_sha256,q.source_bytes,f.detail
+                      q.source_sha256,q.source_bytes,f.detail,
+                      EXISTS (SELECT 1 FROM app.participant_exact_imports x
+                              WHERE x.dataset=q.dataset AND x.trade_date=q.trade_date
+                                AND x.source_sha256=q.source_sha256) AS stored_exact
                FROM app.participant_source_review q
                JOIN app.reference_files f USING (dataset,trade_date)
                WHERE f.status <> 'ok'
@@ -53,11 +57,22 @@ async def participant_review(request: Request) -> JSONResponse:
                 "date": row["trade_date"].isoformat(),
                 "sha256": row["source_sha256"],
                 "status": "quarantined",
+                "stored_exact": row["stored_exact"],
                 "reason": row["detail"],
                 "analysis": analysis,
             }
         )
     return JSONResponse({"files": files})
+
+
+@router.post("/participant-review/import")
+async def import_participant_review(request: Request) -> JSONResponse:
+    """Store exact values for review without admitting them into clean analytics."""
+    if request.app.state.ingest.active:
+        return JSONResponse({"detail": "Wait for the active ingestion job to finish"}, 409)
+    async with request.app.state.pool.acquire() as conn:
+        result = await import_archived(conn, request.app.state.clock.now())
+    return JSONResponse(result)
 
 
 _QUARANTINE_SQL = """

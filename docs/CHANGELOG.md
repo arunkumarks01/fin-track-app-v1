@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — Exact NSE participant review imports
+
+- Added separate review-only storage for exact NUMERIC participant values, including NSE's
+  own total row, source checksum, date status and published total differences. Import is
+  idempotent and never changes the original failure ledger or clean participant table.
+- Imported 26 archived sources (130 rows) to review storage on the VPS. All remain marked
+  review-required; two source dates remain unverified. Missing source files remain gaps.
+
 ## [Unreleased] — NSE participant review report
 
 - Added a read-only review report for archived participant files. It represents source
