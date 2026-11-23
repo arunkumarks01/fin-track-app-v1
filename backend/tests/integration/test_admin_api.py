@@ -10,15 +10,46 @@ import httpx
 import pytest
 
 from app.core.tradingdate import MARKET_TZ
+from app.data.participant_review import retain_participant_source
 from app.db.migrate import migrate
 from app.main import create_app
 from tests.conftest import TEST_TOKEN, build_settings
 from tests.fixtures.clock import FrozenClock
+from tests.unit.test_nse_reference import VOL_2015
 
 pytestmark = pytest.mark.db
 
 NOW = datetime(2026, 11, 18, 18, 0, tzinfo=MARKET_TZ)
 TS = datetime(2026, 11, 17, 0, 0, tzinfo=MARKET_TZ)
+
+
+async def test_participant_review_reports_exact_quarantined_values(db: Any, test_dsn: str) -> None:
+    from datetime import date
+
+    await migrate(db)
+    day = date(2015, 1, 5)
+    blob = VOL_2015.replace("290814,253340", "290814.3333,253340", 1).encode()
+    await db.execute(
+        "INSERT INTO app.reference_files(dataset,trade_date,status,detail,fetched_at) "
+        "VALUES ('participant_vol',$1,'error','fractional',$2)",
+        day,
+        NOW,
+    )
+    await retain_participant_source(
+        db, "participant_vol", day, "https://example.test/source.csv", blob, "fractional", NOW
+    )
+    app = create_app(build_settings(database_url=test_dsn), clock=FrozenClock(NOW))
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c,
+    ):
+        response = await c.get("/api/admin/participant-review")
+    assert response.status_code == 200
+    [item] = response.json()["files"]
+    assert item["status"] == "quarantined"
+    assert item["analysis"]["date_status"] == "verified"
+    assert item["analysis"]["rows"]["Client"]["fut_idx_long"] == "290814.3333"
+    assert item["analysis"]["source_total_differences"]["Client.long"] == "-0.3333"
 
 
 async def test_configured_services_are_scheduled_and_require_a_kite_session(

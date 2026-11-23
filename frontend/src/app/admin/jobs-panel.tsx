@@ -74,6 +74,14 @@ export function JobsPanel() {
       {o.data.referenceErrors.length > 0 && (
         <details>
           <summary className="cursor-pointer font-medium">Recent reference-file errors</summary>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Archived participant files remain excluded from clean data. Their exact values and
+            source-total differences are available in the{" "}
+            <a className="text-primary underline" href="/api/admin/participant-review">
+              participant review report
+            </a>
+            .
+          </p>
           <ul className="mt-2 space-y-1 text-xs text-loss">
             {o.data.referenceErrors.map((e) => (
               <li key={`${e.dataset}-${e.date}`}>

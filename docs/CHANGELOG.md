@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased] — NSE participant review report
+
+- Added a read-only review report for archived participant files. It represents source
+  values as exact decimal strings, reports differences in published totals and keeps
+  unverified dates explicit. Reviewed files remain quarantined and are not used as clean
+  participant positions. The Admin page links to the report.
+
 ## [Unreleased] — Backtest cadence
 
 - Recorded the user's direction to validate each strategy on historical data and then use

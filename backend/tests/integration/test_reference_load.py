@@ -244,12 +244,15 @@ async def test_loads_three_datasets_resumably_with_gaps_and_refusals_recorded(
         assert ledger[("participant_vol", D19)] == ("missing", "404 from the archive")
         assert ledger[("participant_oi", OLD)][0] == "error"
         assert "nse_total_gap_contracts" in (ledger[("participant_oi", D20)][1] or "")
-        assert await db.fetchval(
-            "SELECT source_bytes FROM app.participant_source_review "
-            "WHERE dataset=$1 AND trade_date=$2",
-            "participant_oi",
-            OLD,
-        ) == bad_total.encode()
+        assert (
+            await db.fetchval(
+                "SELECT source_bytes FROM app.participant_source_review "
+                "WHERE dataset=$1 AND trade_date=$2",
+                "participant_oi",
+                OLD,
+            )
+            == bad_total.encode()
+        )
 
         delivery = await db.fetch(
             "SELECT symbol, trade_date, deliv_bps, source_symbol FROM app.delivery_daily "

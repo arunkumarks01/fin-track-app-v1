@@ -20,8 +20,45 @@ from app.api.data import (
 )
 from app.core.tradingdate import MARKET_TZ
 from app.data.jobs import IngestRunner
+from app.data.participant_diagnostics import analyze_source
 
 router = APIRouter(prefix="/api/admin")
+
+
+@router.get("/participant-review")
+async def participant_review(request: Request) -> JSONResponse:
+    """Show exact archived source values as quarantined, never as clean positions."""
+    async with request.app.state.pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT DISTINCT ON (q.dataset,q.trade_date) q.dataset,q.trade_date,
+                      q.source_sha256,q.source_bytes,f.detail
+               FROM app.participant_source_review q
+               JOIN app.reference_files f USING (dataset,trade_date)
+               WHERE f.status <> 'ok'
+               ORDER BY q.dataset,q.trade_date,q.captured_at DESC"""
+        )
+    files = []
+    for row in rows:
+        try:
+            analysis = analyze_source(
+                bytes(row["source_bytes"]),
+                row["trade_date"],
+                "oi" if row["dataset"] == "participant_oi" else "volume",
+            )
+        except (ValueError, UnicodeError) as exc:
+            analysis = {"analysis_error": str(exc)}
+        files.append(
+            {
+                "dataset": row["dataset"],
+                "date": row["trade_date"].isoformat(),
+                "sha256": row["source_sha256"],
+                "status": "quarantined",
+                "reason": row["detail"],
+                "analysis": analysis,
+            }
+        )
+    return JSONResponse({"files": files})
+
 
 _QUARANTINE_SQL = """
 SELECT timeframe, reason, count(*) AS n FROM app.ohlcv_quarantine
