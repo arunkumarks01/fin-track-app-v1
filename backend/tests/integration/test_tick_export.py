@@ -79,7 +79,7 @@ def _settings(dsn: str, directory: Path, **kw: Any) -> Any:
     )
 
 
-async def test_an_old_chunk_is_exported_verified_then_dropped_and_a_recent_one_stays(
+async def test_an_old_chunk_is_exported_verified_and_retained(
     pool: Any, db: Any, test_dsn: str, tmp_path: Path
 ) -> None:
     await _seed(db)
@@ -88,7 +88,7 @@ async def test_an_old_chunk_is_exported_verified_then_dropped_and_a_recent_one_s
         NOW - timedelta(days=7),
     )
     r = await export_ready_chunks(pool, _settings(test_dsn, tmp_path), FrozenClock(NOW))
-    assert (r.verified, r.dropped, r.failed, r.rows) == (1, 1, 0, 250)
+    assert (r.verified, r.dropped, r.failed, r.rows) == (1, 0, 0, 250)
 
     files = _files(tmp_path, "*.parquet")
     assert len(files) == 1
@@ -99,15 +99,15 @@ async def test_an_old_chunk_is_exported_verified_then_dropped_and_a_recent_one_s
     assert t.schema.field("ts").type.tz == "UTC"
     assert files[0].parent.name == f"date={OLD:%Y-%m-%d}"
 
-    assert await db.fetchval("SELECT count(*) FROM app.ticks") == 1  # only the recent tick remains
+    assert await db.fetchval("SELECT count(*) FROM app.ticks") == 251  # cleanup remains suspended
     led = await db.fetchrow("SELECT status, rows, dropped_at, sha256, bytes FROM app.tick_exports")
     assert (led["status"], led["rows"]) == ("verified", 250)
-    assert led["dropped_at"] is not None
+    assert led["dropped_at"] is None
     assert len(led["sha256"]) == 64
     assert led["bytes"] == _size(files[0])
 
     again = await export_ready_chunks(pool, _settings(test_dsn, tmp_path), FrozenClock(NOW))
-    assert (again.verified, again.dropped, again.failed) == (0, 0, 0)  # nothing twice
+    assert (again.verified, again.dropped, again.failed) == (1, 0, 0)  # re-check fresh snapshot
 
 
 async def test_a_file_that_does_not_match_keeps_the_chunk_and_leaves_no_file(

@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased] — Tick export integrity work
+
+- Export verification now includes a duplicate-sensitive, order-independent digest of every
+  tick field, including nulls, and always exports a fresh snapshot on retry. Even direct
+  exporter calls retain database chunks; safe cleanup still needs a protocol for concurrent
+  writers and durable promotion. Verification is of a snapshot, not of later writes.
+- Tested every field, ordering and duplicates, and exercised export and failure paths on the
+  dedicated test database. This does not close the Phase 1 or Phase 5 exit gates.
+
 ## [Unreleased] — Labelled participant research data
 
 - Exposed 19 exact NSE participant files that reconcile within the configured tolerance

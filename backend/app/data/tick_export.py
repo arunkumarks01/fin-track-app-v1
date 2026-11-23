@@ -1,4 +1,4 @@
-"""Tick export to Parquet, then cleanup (slice 1d, DEC-1D-TICKS) — fail closed.
+"""Tick export to Parquet (slice 1d, DEC-1D-TICKS) — cleanup suspended.
 
 Parquet is the permanent record of ticks; the database keeps only a short hot window. For every
 chunk older than TICKS_HOT_DAYS:
@@ -6,17 +6,17 @@ chunk older than TICKS_HOT_DAYS:
      rows themselves come from the same snapshot;
   2. stream the rows into a Parquet file (zstd), written to a temporary name;
   3. read the file back and recompute the same row count and checksums;
-  4. only if they are identical: move the file into place, record 'verified', and drop exactly
-     that chunk. Any difference or error leaves the chunk in the database, flagged, and removes
-     the temporary file. A chunk already verified but not yet dropped (a crash in between) is
-     re-checked against the file before it is dropped.
-The old unconditional 90-day drop job is gone: nothing deletes ticks without a verified file.
+  4. only if they are identical: move the file into place and record 'verified'. Any
+     difference or error leaves the chunk in the database and flags the failure.
+All chunks remain in the database until a concurrency-safe cleanup protocol is implemented.
+Verification describes the exported snapshot; subsequent writes may change the database.
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 from collections.abc import Awaitable, Callable
@@ -86,10 +86,16 @@ class ExportReport:
 
 def checksums_from_parquet(path: Path) -> dict[str, int]:
     """The same aggregates as _AGG_SQL, recomputed from the file (streamed, batch by batch)."""
-    out = {"rows": 0, "sid_sum": 0, "ltp_sum": 0, "volume_sum": 0, "ts_sum": 0, "depth_sum": 0}
-    for batch in pq.ParquetFile(path).iter_batches(
-        columns=["sid", "ltp", "volume", "ts", "b1q", "a1q"]
-    ):
+    out = {
+        "rows": 0,
+        "sid_sum": 0,
+        "ltp_sum": 0,
+        "volume_sum": 0,
+        "ts_sum": 0,
+        "depth_sum": 0,
+        "full_hash": 0,
+    }
+    for batch in pq.ParquetFile(path).iter_batches(columns=list(COLUMNS)):
         out["rows"] += batch.num_rows
         out["sid_sum"] += pc.sum(batch["sid"].cast(pa.int64())).as_py() or 0
         out["ltp_sum"] += pc.sum(batch["ltp"].cast(pa.int64())).as_py() or 0
@@ -97,7 +103,25 @@ def checksums_from_parquet(path: Path) -> dict[str, int]:
         out["ts_sum"] += pc.sum(batch["ts"].cast(pa.int64())).as_py() or 0
         both = pc.add(batch["b1q"].cast(pa.int64()), batch["a1q"].cast(pa.int64()))
         out["depth_sum"] += pc.sum(both).as_py() or 0
+        out["full_hash"] = (out["full_hash"] + _full_hash(pa.Table.from_batches([batch]))) % (
+            1 << 256
+        )
     return out
+
+
+def _full_hash(table: pa.Table) -> int:
+    """Order-independent, duplicate-sensitive digest of every field and null marker."""
+    columns = []
+    for col in COLUMNS:
+        values = table[col]
+        if col in ("ts", "ltt", "ext"):
+            values = values.cast(pa.int64())
+        columns.append(values.to_pylist())
+    total = 0
+    for row in zip(*columns, strict=True):
+        encoded = json.dumps(row, separators=(",", ":")).encode("ascii")
+        total += int.from_bytes(hashlib.sha256(encoded).digest(), "big")
+    return total % (1 << 256)
 
 
 def _sha256(path: Path) -> str:
@@ -119,6 +143,7 @@ async def _write_chunk(
     await asyncio.to_thread(tmp.parent.mkdir, parents=True, exist_ok=True)
     async with conn.transaction(isolation="repeatable_read", readonly=True):
         agg = dict(await conn.fetchrow(_AGG_SQL, start, end))
+        agg["full_hash"] = 0
         writer = await asyncio.to_thread(pq.ParquetWriter, tmp, SCHEMA, compression="zstd")
         try:
             rows: list[Any] = []
@@ -131,9 +156,11 @@ async def _write_chunk(
             ):
                 rows.append(rec)
                 if len(rows) >= batch_rows:
+                    agg["full_hash"] = (agg["full_hash"] + _full_hash(_table(rows))) % (1 << 256)
                     await asyncio.to_thread(_write, writer, rows)
                     rows = []
             if rows:
+                agg["full_hash"] = (agg["full_hash"] + _full_hash(_table(rows))) % (1 << 256)
                 await asyncio.to_thread(_write, writer, rows)
         finally:
             await asyncio.to_thread(writer.close)
@@ -224,51 +251,34 @@ async def _one_chunk(
     if prior and prior["dropped_at"]:
         return  # done long ago
     final = _file_for(directory, start)
-    db_agg: dict[str, int] | None = None
-    if (
-        prior
-        and prior["status"] == "verified"
-        and await asyncio.to_thread(Path(prior["path"] or "").exists)
-    ):
-        # exported and verified on an earlier run, but not yet dropped: re-check, then drop
-        db_agg = {k: int(v) for k, v in dict(await conn.fetchrow(_AGG_SQL, start, end)).items()}
-        if await asyncio.to_thread(checksums_from_parquet, Path(prior["path"])) != db_agg:
-            raise ExportMismatchError("the earlier export no longer matches the database")
-    else:
-        tmp = final.with_suffix(".parquet.tmp")
-        try:
-            db_agg = await _write_chunk(conn, start, end, tmp, settings.ticks_export_batch_rows)
-            if db_agg["rows"] == 0:
-                return  # an empty chunk: nothing to keep (the temp file is removed below)
-            file_agg = await asyncio.to_thread(checksums_from_parquet, tmp)
-            if file_agg != db_agg:
-                await _ledger(
-                    conn, start, end, "mismatch", now, rows=db_agg["rows"],
-                    checksums={"db": db_agg, "file": file_agg},
-                    detail="the Parquet file does not match the database — chunk kept",
-                )  # fmt: skip
-                raise ExportMismatchError(f"checksum mismatch db={db_agg} file={file_agg}")
-            await asyncio.to_thread(os.replace, tmp, final)
-        finally:
-            await asyncio.to_thread(tmp.unlink, missing_ok=True)
-        size = (await asyncio.to_thread(final.stat)).st_size
-        digest = await asyncio.to_thread(_sha256, final)
-        await _ledger(
-            conn, start, end, "verified", now, rows=db_agg["rows"], bytes=size,
-            sha256=digest, path=str(final), checksums=db_agg,
-        )  # fmt: skip
-        report.verified += 1
-        report.rows += db_agg["rows"]
-    await conn.execute(
-        "SELECT drop_chunks('app.ticks'::regclass, older_than => $2::timestamptz, "
-        "newer_than => $1::timestamptz - interval '1 microsecond')",
-        start,
-        end,
-    )
-    await conn.execute(
-        "UPDATE app.tick_exports SET dropped_at = $2 WHERE chunk_start = $1", start, now
-    )
-    report.dropped += 1
+    # A fresh snapshot is required even if an earlier export was verified: late
+    # writes may have changed the chunk since that verification.
+    tmp = final.with_suffix(".parquet.tmp")
+    try:
+        db_agg = await _write_chunk(conn, start, end, tmp, settings.ticks_export_batch_rows)
+        if db_agg["rows"] == 0:
+            return
+        file_agg = await asyncio.to_thread(checksums_from_parquet, tmp)
+        if file_agg != db_agg:
+            await _ledger(
+                conn, start, end, "mismatch", now, rows=db_agg["rows"],
+                checksums={"db": db_agg, "file": file_agg},
+                detail="the Parquet file does not match the database — chunk kept",
+            )  # fmt: skip
+            raise ExportMismatchError("full-record checksum mismatch; chunk kept")
+        await asyncio.to_thread(os.replace, tmp, final)
+    finally:
+        await asyncio.to_thread(tmp.unlink, missing_ok=True)
+    size = (await asyncio.to_thread(final.stat)).st_size
+    digest = await asyncio.to_thread(_sha256, final)
+    await _ledger(
+        conn, start, end, "verified", now, rows=db_agg["rows"], bytes=size,
+        sha256=digest, path=str(final), checksums=db_agg,
+        detail="Snapshot verified; database chunk retained pending concurrency-safe cleanup",
+    )  # fmt: skip
+    report.verified += 1
+    report.rows += db_agg["rows"]
+    # Never drop here until verification and deletion are protected from concurrent writers.
 
 
 def tick_export_job(
