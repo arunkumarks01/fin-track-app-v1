@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Late tick guard
+
+- Added migration 0021 to reject inserts or timestamp updates into ranges already marked
+  dropped in the export ledger. Existing migrations and their checksums are unchanged.
+- Dedicated test-database checks cover retained versus dropped ranges and both sides of a
+  proposed maintenance lock: a pre-existing writer completes before the lock, and a later
+  writer sees the committed dropped marker. This is one component of the protocol, not a
+  completed retention solution. Cleanup remains disabled; atomic verified deletion,
+  recovery, and the trigger's live-write performance still need verification.
+
 ## [Unreleased] — Kite login capture recovery
 
 - A successful Kite login during the configured weekday capture window starts the capture
