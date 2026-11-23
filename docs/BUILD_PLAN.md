@@ -123,6 +123,12 @@ segment analysis (strategy×beta×sector×time×regime), slippage calibration fr
 Calibration output feeds Phase 3 conviction + the explainer. *Gate:* parity green; backtest
 P&L == paper P&L same trade+costs; zero-edge fixture net-negative after costs.
 
+**Phase 6 foundation in progress.** A deterministic single-symbol daily replay building
+block accepts validated as-traded fixture bars and next-session market/limit instructions.
+It shares the paper fill and fee model and has a test-database parity example. It is not
+yet a strategy backtester or an API: data coverage, portfolio replay, live-scanner parity,
+walk-forward evaluation and the full exit gate remain outstanding.
+
 **Phase 7 — Options multi-leg (~2 wk).** Spreads, iron condor, straddle/strangle, covered
 call, calendar; payoff-diagram engine; phase-unlock progression. *Gate:* payoff math
 validated; multi-leg fills + margin modeled in the sandbox.

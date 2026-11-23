@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased] — Phase 6 replay foundation
+
+- Added an offline single-symbol daily replay building block. Close-of-session instructions
+  execute no earlier than the next supplied session using paper's fill, fee and cost-basis
+  functions. Added causal, cost, drawdown, partial-fill and test-database paper-parity
+  checks. This is not yet a complete strategy backtester or Phase 6 gate.
+- Added a small Learn page explaining backtests, drawdown, win rate, slippage and
+  overfitting, with a link to the clearly labelled fictional backtest example.
+
 ## [Unreleased] — Backtest learning preview
 
 - Added an explicitly fictional four-trade example that explains return, win rate and
