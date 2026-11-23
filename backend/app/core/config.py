@@ -186,7 +186,7 @@ class Settings(BaseSettings):
     scoring_scan_enabled: bool = False
     scoring_swing_morning_cron: str = "20 9 * * mon-fri"
     scoring_swing_close_cron: str = "40 15 * * mon-fri"
-    scoring_intraday_cron: str = "*/5 9-15 * * mon-fri"
+    scoring_intraday_cron: str = "0 16 * * mon-fri"
 
     analytics_periods: IndicatorPeriods = Field(default_factory=IndicatorPeriods)
     analytics_warmup_bars: int = Field(default=800, ge=0, le=5000)

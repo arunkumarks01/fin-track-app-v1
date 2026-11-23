@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Account-aware candidate guardrails
+
+- Candidate plans can now take `paper_account_id`. They load that account's persisted risk
+  settings, mode, cash, open-position count, realised P&L and fills for the proposed trade
+  day before calculating sizing and guardrails. The normal research view remains account-free
+  and explicitly reports unavailable portfolio inputs.
+- Intraday scans now wait for the configured finalisation time, with the default scheduled
+  run at 16:00 IST instead of attempting to evaluate partial 5-minute bars during the session.
+  Account-aware plan and finalisation tests pass; live input acceptance remains separate.
+
 ## [Unreleased] — Paper replay safeguards
 
 - Replay now stops without advancing when a held equity lacks a current-session mark, instead

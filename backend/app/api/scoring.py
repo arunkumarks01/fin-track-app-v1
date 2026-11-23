@@ -32,6 +32,7 @@ async def candidates(
     mode: Mode = "swing",
     instrument: Instrument = "underlying",
     as_of: datetime | None = None,
+    paper_account_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> dict[str, Any]:
     anchor = _as_of(request, as_of)
     symbol = symbol.upper()
@@ -43,7 +44,14 @@ async def candidates(
             conn.transaction(isolation="repeatable_read", readonly=True),
         ):
             result = await candidate_report(
-                conn, symbol, mode, anchor, settings, instrument, include_trade_plans=True
+                conn,
+                symbol,
+                mode,
+                anchor,
+                settings,
+                instrument,
+                include_trade_plans=True,
+                paper_account_id=paper_account_id,
             )
             sources = (
                 await stored_news(conn, symbol, anchor, settings.scoring)
@@ -54,6 +62,8 @@ async def candidates(
         raise HTTPException(422, detail=str(exc)) from exc
     except UnknownSymbol as exc:
         raise HTTPException(404, detail="Symbol is not in the universe") from exc
+    except ValueError as exc:
+        raise HTTPException(404, detail=str(exc)) from exc
     result["news"] = (
         research.status(symbol, sources)
         if settings.scoring_news_enabled

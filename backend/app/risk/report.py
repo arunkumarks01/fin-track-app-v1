@@ -8,8 +8,9 @@ from typing import Any
 from app.analytics.indicators import Bar, atr
 from app.core.config import Settings
 from app.core.tradingdate import MARKET_TZ
+from app.risk.parameters import PaperMode, RiskParameters
 from app.risk.plans import PriceContext, Side, build_levels
-from app.risk.sizing import checks, size
+from app.risk.sizing import Portfolio, checks, size
 from app.scoring.rules import Instrument, Mode, Value
 
 _STRUCTURE = (
@@ -47,6 +48,46 @@ async def next_session(conn: Any, symbol: str, day: date, settings: Settings) ->
         datetime.combine(day, time.max, MARKET_TZ),
     )
     return result
+
+
+async def account_portfolio(
+    conn: Any, account_id: int, day: date
+) -> tuple[Portfolio, RiskParameters, PaperMode]:
+    """Load the persisted account inputs used to assess a candidate plan."""
+    account = await conn.fetchrow(
+        """SELECT cash_paisa, risk_parameters, paper_mode
+           FROM app.paper_accounts WHERE id=$1""",
+        account_id,
+    )
+    if account is None:
+        raise ValueError("Paper account not found")
+    positions = await conn.fetchval(
+        "SELECT count(*) FROM app.paper_positions WHERE account_id=$1", account_id
+    )
+    trades = await conn.fetchval(
+        """SELECT count(DISTINCT f.order_id) FROM app.paper_fills f
+           JOIN app.paper_orders o ON o.id=f.order_id
+           WHERE o.account_id=$1 AND f.trade_day=$2""",
+        account_id,
+        day,
+    )
+    realized = await conn.fetchval(
+        """SELECT coalesce(sum(f.realized_paisa), 0) FROM app.paper_fills f
+           JOIN app.paper_orders o ON o.id=f.order_id
+           WHERE o.account_id=$1 AND f.trade_day=$2""",
+        account_id,
+        day,
+    )
+    return (
+        Portfolio(
+            int(account["cash_paisa"]),
+            int(realized),
+            int(positions),
+            int(trades),
+        ),
+        RiskParameters.model_validate_json(account["risk_parameters"]),
+        account["paper_mode"],
+    )
 
 
 async def _derivative_context(
@@ -151,6 +192,7 @@ async def attach_plans(
     day: date,
     as_of: datetime,
     settings: Settings,
+    account_id: int | None = None,
 ) -> None:
     matched = [item for item in items if item["status"] == "matched"]
     if not matched:
@@ -165,6 +207,12 @@ async def attach_plans(
         )
     next_day = day if mode == "intraday" else await next_session(conn, symbol, day, settings)
     cutoff = settings.risk.entry_cutoff_ist
+    portfolio: Portfolio | None = None
+    risk = settings.risk
+    paper_mode = settings.paper_submode
+    if account_id is not None:
+        portfolio, risk, paper_mode = await account_portfolio(conn, account_id, day)
+        cutoff = risk.entry_cutoff_ist
     expiration = datetime.combine(next_day, cutoff, MARKET_TZ) if next_day else None
     cutoff_label = cutoff.isoformat(timespec="minutes")
     for item in matched:
@@ -203,24 +251,22 @@ async def attach_plans(
                 continue
             price, lot = prepared
         side: Side = "long" if instrument == "option" or item["direction"] == "long" else "short"
-        levels = build_levels(price, side, settings.risk)
+        levels = build_levels(price, side, risk)
         if levels is None:
             item["trade_plan"] = unavailable(
                 "The stored price levels cannot form a valid risk plan"
             )
             continue
-        sizing = size(levels, lot, instrument, settings.risk, settings.risk_sizing_mode)
-        guardrails = checks(
-            levels.reward_risk_bps, sizing, None, settings.risk, settings.paper_submode, instrument
-        )
+        sizing = size(levels, lot, instrument, risk, settings.risk_sizing_mode, portfolio)
+        guardrails = checks(levels.reward_risk_bps, sizing, portfolio, risk, paper_mode, instrument)
         if expiration is None:
             guardrails["unknown"].append("The next trading session is not yet confirmed")
-            if settings.paper_submode == "realistic":
+            if paper_mode == "realistic":
                 guardrails["blocks"] = True
         expired = expiration is not None and as_of >= expiration
         if expired:
             guardrails["warnings"].append("The entry window has expired")
-            guardrails["blocks"] = settings.paper_submode == "realistic"
+            guardrails["blocks"] = paper_mode == "realistic"
         # Positions are not opened here; the timestamp is an entry window, rather than an order.
         entry_session = "Signal session" if mode == "intraday" else "Next trading session"
         window = f"{entry_session} · {cutoff_label} IST"
@@ -237,7 +283,8 @@ async def attach_plans(
             "lot_size": lot,
             "tick_size_paisa": price.tick,
             "sizing": sizing.to_dict(),
-            "capital_paisa": settings.risk.paper_capital_paisa,
+            "capital_paisa": risk.paper_capital_paisa,
+            "paper_account_id": account_id,
             "guardrails": guardrails,
             "entry_window": window,
             "expires_at": expiration.isoformat() if expiration else None,

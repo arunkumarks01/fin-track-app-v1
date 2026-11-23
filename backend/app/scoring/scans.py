@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, time
+from datetime import datetime
 from typing import Any
 
 from app.core.config import Settings
@@ -17,12 +17,10 @@ async def scan_universe(
     pool: Any, settings: Settings, as_of: datetime, mode: Mode
 ) -> dict[str, Any]:
     local = as_of.astimezone(MARKET_TZ)
-    if mode == "intraday" and not time(9, 15) <= local.time().replace(
-        second=0, microsecond=0
-    ) <= time(15):
+    if mode == "intraday" and local.time() < settings.intraday_final_after_ist:
         return {
-            "skipped": "Outside the intraday scan window",
-            "stopped_reason": "Outside the intraday scan window",
+            "skipped": "Awaiting finalized intraday bars",
+            "stopped_reason": "Awaiting finalized intraday bars",
         }
     slot = as_of.replace(second=0, microsecond=0)
     async with pool.acquire() as conn:

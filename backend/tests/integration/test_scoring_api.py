@@ -6,9 +6,11 @@ from typing import Any
 import httpx
 import pytest
 
+from app.core.tradingdate import MARKET_TZ
 from app.data.instruments import UniverseMember, sync_universe
 from app.db.migrate import migrate
 from app.main import create_app
+from app.risk.parameters import RiskParameters
 from app.scoring.calibration import model_key
 from app.scoring.scans import scan_universe
 from tests.conftest import TEST_TOKEN, build_settings
@@ -88,6 +90,33 @@ async def test_candidates_show_real_rule_evidence_and_pin_custom_revisions(
         assert levels["entry_limit_paisa"] < levels["target_paisa"]
         assert plan["capital_paisa"] == 1_000_000_000
         assert plan["guardrails"]["blocks"] is False
+        trade_day = history[-1].ts.astimezone(MARKET_TZ).date()
+        account_id = await db.fetchval(
+            """INSERT INTO app.paper_accounts
+               (name,start_day,paper_mode,created_at,capital_paisa,cash_paisa,
+                paper_parameters,risk_parameters)
+               VALUES ('Risk account',$1,'realistic',$2,1000000,1,'{}'::jsonb,$3::jsonb)
+               RETURNING id""",
+            trade_day,
+            now,
+            RiskParameters(paper_capital_paisa=1_000_000, max_positions=1).model_dump_json(),
+        )
+        await db.execute(
+            """INSERT INTO app.paper_positions
+               (account_id,symbol,quantity,cost_paisa,mark_paisa,mark_day)
+               VALUES ($1,'NSE:HELD',1,10000,10000,$2)""",
+            account_id,
+            trade_day,
+        )
+        account_report = await client.get(
+            "/api/scoring/candidates", params={"symbol": symbol, "paper_account_id": account_id}
+        )
+        account_plan = next(
+            x for x in account_report.json()["evaluations"] if x["id"] == "custom_close"
+        )["trade_plan"]
+        assert account_plan["paper_account_id"] == account_id
+        assert account_plan["guardrails"]["blocks"] is True
+        assert "Maximum open positions reached" in account_plan["guardrails"]["warnings"]
         await db.execute(
             """INSERT INTO app.scoring_calibrations (
                    strategy_id,strategy_revision,instrument,model_key,available_at,

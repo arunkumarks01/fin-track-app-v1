@@ -83,6 +83,7 @@ async def candidate_report(
     instrument: Instrument,
     *,
     include_trade_plans: bool = False,
+    paper_account_id: int | None = None,
 ) -> dict[str, Any]:
     market = await indicator_report(
         conn,
@@ -195,7 +196,16 @@ async def candidate_report(
         )
     if include_trade_plans and trade_date:
         await attach_plans(
-            conn, evaluations, current, symbol, mode, instrument, trade_date, as_of, settings
+            conn,
+            evaluations,
+            current,
+            symbol,
+            mode,
+            instrument,
+            trade_date,
+            as_of,
+            settings,
+            paper_account_id,
         )
     return {
         "symbol": symbol,
