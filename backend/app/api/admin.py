@@ -20,6 +20,7 @@ from app.api.data import (
 )
 from app.core.tradingdate import MARKET_TZ
 from app.data.jobs import IngestRunner
+from app.data.participant_assessment import assess_imported
 from app.data.participant_diagnostics import analyze_source
 from app.data.participant_exact import import_archived
 
@@ -35,11 +36,16 @@ async def participant_review(request: Request) -> JSONResponse:
                       q.source_sha256,q.source_bytes,f.detail,
                       EXISTS (SELECT 1 FROM app.participant_exact_imports x
                               WHERE x.dataset=q.dataset AND x.trade_date=q.trade_date
-                                AND x.source_sha256=q.source_sha256) AS stored_exact
+                                AND x.source_sha256=q.source_sha256) AS stored_exact,
+                      (SELECT d.outcome FROM app.participant_review_decisions d
+                       WHERE d.dataset=q.dataset AND d.trade_date=q.trade_date
+                         AND d.source_sha256=q.source_sha256 AND d.tolerance_contracts=$1
+                       ORDER BY d.reviewed_at DESC,d.method DESC LIMIT 1) AS assessment
                FROM app.participant_source_review q
                JOIN app.reference_files f USING (dataset,trade_date)
                WHERE f.status <> 'ok'
-               ORDER BY q.dataset,q.trade_date,q.captured_at DESC"""
+               ORDER BY q.dataset,q.trade_date,q.captured_at DESC""",
+            request.app.state.settings.participant_total_tolerance_contracts,
         )
     files = []
     for row in rows:
@@ -58,6 +64,7 @@ async def participant_review(request: Request) -> JSONResponse:
                 "sha256": row["source_sha256"],
                 "status": "quarantined",
                 "stored_exact": row["stored_exact"],
+                "assessment": row["assessment"],
                 "reason": row["detail"],
                 "analysis": analysis,
             }
@@ -72,6 +79,20 @@ async def import_participant_review(request: Request) -> JSONResponse:
         return JSONResponse({"detail": "Wait for the active ingestion job to finish"}, 409)
     async with request.app.state.pool.acquire() as conn:
         result = await import_archived(conn, request.app.state.clock.now())
+    return JSONResponse(result)
+
+
+@router.post("/participant-review/assess")
+async def assess_participant_review(request: Request) -> JSONResponse:
+    """Record source-consistency checks without modifying the clean-data ledger."""
+    if request.app.state.ingest.active:
+        return JSONResponse({"detail": "Wait for the active ingestion job to finish"}, 409)
+    async with request.app.state.pool.acquire() as conn:
+        result = await assess_imported(
+            conn,
+            request.app.state.settings.participant_total_tolerance_contracts,
+            request.app.state.clock.now(),
+        )
     return JSONResponse(result)
 
 

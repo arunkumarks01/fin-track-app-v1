@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — NSE participant source consistency review
+
+- Added reproducible checks for each exact participant source, using the existing configured
+  tolerance and retaining the original values and differences. The corrected v2 check
+  distinguishes participant-component totals from the published grand total; the first
+  v1 run is retained as audit history and superseded by v2.
+- On the VPS, v2 classified 19 files as reconciled within tolerance, five with materially
+  inconsistent published long/short totals, and two with unverified source dates. These
+  are source checks, not approval to use the files as verified clean analytics data.
+
 ## [Unreleased] — Exact NSE participant review imports
 
 - Added separate review-only storage for exact NUMERIC participant values, including NSE's

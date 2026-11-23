@@ -79,7 +79,13 @@ async def test_participant_review_reports_exact_quarantined_values(db: Any, test
         assert imported.json()["failures"] == []
         retry = await c.post("/api/admin/participant-review/import", headers=auth)
         assert retry.json()["already_imported"] == 1
-        assert (await c.get("/api/admin/participant-review")).json()["files"][0]["stored_exact"]
+        assert (await c.post("/api/admin/participant-review/assess")).status_code == 401
+        assessed = await c.post("/api/admin/participant-review/assess", headers=auth)
+        assert assessed.status_code == 200
+        assert assessed.json()["outcomes"] == {"reconciled_within_tolerance": 1}
+        reviewed = (await c.get("/api/admin/participant-review")).json()["files"][0]
+        assert reviewed["stored_exact"]
+        assert reviewed["assessment"] == "reconciled_within_tolerance"
     assert response.status_code == 200
     [item] = response.json()["files"]
     assert item["status"] == "quarantined"
