@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased] — Labelled participant research data
+
+- Exposed 19 exact NSE participant files that reconcile within the configured tolerance
+  and five files whose participant components reconcile but printed totals differ. They
+  remain separate from clean analytics, with source values, independently derived totals,
+  warnings, source checksums and explicit quality labels in a research-only workspace.
+- Two participant dates remain gaps: the NSE file for 13 June 2018 has no title/date, and
+  the file requested for 8 June 2021 states only “Jun 08”, without a year. A filename and
+  the existence of a market session do not independently verify the contents' date. The
+  missing participant archive remains an explicit gap.
+
 ## [Unreleased] — NSE participant source consistency review
 
 - Added reproducible checks for each exact participant source, using the existing configured

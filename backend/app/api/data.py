@@ -49,6 +49,7 @@ from app.data.intraday_coverage import intraday_report, review_sessions
 from app.data.jobs import IngestRunner
 from app.data.nse_load import reset_archive_day
 from app.data.nse_reference import DATASETS
+from app.data.participant_usable import reviewed_participants
 from app.data.reference_report import (
     macro_latest,
     participant_positions,
@@ -60,6 +61,16 @@ from app.data.stock import stock_profile
 from app.data.tick_report import latest_chain, ticks_status
 
 router = APIRouter(prefix="/api/data")
+
+
+@router.get("/participant-reviewed")
+async def get_reviewed_participants(request: Request) -> JSONResponse:
+    """Research-only source values with explicit quality and gap metadata."""
+    async with request.app.state.pool.acquire() as conn:
+        report = await reviewed_participants(
+            conn, request.app.state.settings.participant_total_tolerance_contracts
+        )
+    return JSONResponse(report)
 
 
 def _runner(request: Request) -> IngestRunner:

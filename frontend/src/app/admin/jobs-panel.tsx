@@ -75,9 +75,9 @@ export function JobsPanel() {
         <details>
           <summary className="cursor-pointer font-medium">Recent reference-file errors</summary>
           <p className="mt-2 text-xs text-muted-foreground">
-            Archived participant files remain excluded from clean data. Their exact values and
+            Reviewed participant files remain separate from clean analytics. Their exact values and
             source-total differences are available in the{" "}
-            <a className="text-primary underline" href="/api/admin/participant-review">
+            <a className="text-primary underline" href="/participant-review">
               participant review report
             </a>
             .
