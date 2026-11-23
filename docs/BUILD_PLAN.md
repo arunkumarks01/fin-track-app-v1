@@ -139,6 +139,13 @@ without calling an open position a completed trade. It is not yet a strategy bac
 an API: data coverage, portfolio replay, live-scanner parity, walk-forward evaluation and
 the full exit gate remain outstanding.
 
+**Phase 6 first cohort.** The initial historical studies are the five daily long signals:
+52-week breakout, EMA 50/200 cross, RSI bounce, Bollinger squeeze and relative strength.
+Each uses a versioned baseline with next-session entry, explicit stop/target and maximum
+holding-session assumptions. These assumptions are research inputs, not calibrated claims;
+results must record the exact strategy revision before they can be compared or promoted to
+forward paper testing.
+
 **Phase 7 — Options multi-leg (~2 wk).** Spreads, iron condor, straddle/strangle, covered
 call, calendar; payoff-diagram engine; phase-unlock progression. *Gate:* payoff math
 validated; multi-leg fills + margin modeled in the sandbox.

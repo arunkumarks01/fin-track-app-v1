@@ -9,6 +9,12 @@
 - Unit checks cover the shared paper-cost model and open-position reporting boundary. This is
   offline backtest infrastructure, not a strategy runner, portfolio backtest or Phase 6 gate.
 
+## [Unreleased] — Phase 6 daily-long study specifications
+
+- Added explicit, versioned research baselines for the first five daily-long studies. Each
+  declares next-session entry, stop, target, maximum holding sessions and single-position
+  rule rather than allowing an undisclosed discretionary exit.
+
 ## [Unreleased] — Conservative paper trailing stops
 
 - Realistic equity paper orders can persist an optional trailing-stop distance. A final daily
