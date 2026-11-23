@@ -6,8 +6,9 @@
 > Decisions locked in DECISIONS.md; design in ARCHITECTURE.md.
 
 > Current recovery status: feature code through Phase 5 is present, but presence is not
-> exit-gate evidence. Tick export integrity, live intraday inputs, account-aware risk and
-> paper execution have unresolved implementation gaps. See PHASE_1_5_HANDOFF.md; older
+> exit-gate evidence. Tick export integrity, live intraday inputs and complete derivative/
+> approval paper execution remain unresolved. Account-aware risk and equity protective exits
+> have database-backed verification. See PHASE_1_5_HANDOFF.md; older
 > dated implementation notes below are historical and do not close these gates.
 
 ## The rule
@@ -113,9 +114,10 @@ paper P&L matches hand-computed cost example.
 **Phase 5 manual replay slice.** The Paper trading workspace simulates NSE equity fills on
 finalized as-traded daily bars. Replay accounts, orders, fills, positions, transaction charges,
 P&L and safety controls persist in the paper ledger. Account-specific fill assumptions are
-fixed at creation so a configuration change does not change an existing replay. Validate
-live marking, derivative contracts and automatic stop/target/trailing and approval flows
-before closing the full phase.
+fixed at creation so a configuration change does not change an existing replay. Equity
+stop/target exits and conservative trailing stops are verified against final daily bars: an
+observed high can only tighten the following session's stop, avoiding intrabar look-ahead.
+Validate live marking, derivative contracts and approval flows before closing the full phase.
 
 **Phase 6 — Backtesting (~2–3 wk).** Signal + **portfolio** backtesting, walk-forward
 (in/out-of-sample), same cost model, chronological drawdown, **backtest↔live↔paper parity**,

@@ -4,9 +4,10 @@
 > phase. This defines the layers, tooling, the per-build-phase gates, and the harnesses.
 > Consistent with ARCHITECTURE.md §11 and BUILD_PLAN exit gates.
 
-> Recovery status: the Phase 5 exit-flow and store-integration files contain skipped
-> placeholders. They are not exit-gate evidence. The restored CI workflow also needs a
-> successful hosted run; remaining integration work is listed in PHASE_1_5_HANDOFF.md.
+> Recovery status: the Phase 5 equity exit-flow integration is active and database-backed,
+> including a next-session trailing-stop check. It does not close the Phase 5 exit gate:
+> derivative execution, approval flows, live-input acceptance and a successful hosted CI run
+> remain. Remaining integration work is listed in PHASE_1_5_HANDOFF.md.
 
 ## Principles
 1. **Determinism or nothing** — frozen clock, mocked Kite/LLM/network, in-memory cache. No test depends on wall-clock or live data.

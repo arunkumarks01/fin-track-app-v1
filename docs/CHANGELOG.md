@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Conservative paper trailing stops
+
+- Realistic equity paper orders can persist an optional trailing-stop distance. A final daily
+  bar may tighten the stop only for the following replay session, so unknown high/low order
+  within a daily bar cannot produce a favourable exit after the fact.
+- Added a dedicated `_test` database replay covering entry, a trail earned on the next
+  finalized session, and a subsequent gap-through protective exit. Stop/target, trailing and
+  mark persistence now have end-to-end evidence; derivatives, approvals and live-input
+  acceptance remain Phase 5 work.
+
 ## [Unreleased] — Realistic paper stop exits
 
 - Realistic-mode paper entries with a stop and target now receive an automatic protective

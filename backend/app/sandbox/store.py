@@ -17,6 +17,7 @@ from app.risk.sizing import Portfolio, Sizing, checks
 from app.sandbox.exits import detect_exit, exit_instruction
 from app.sandbox.model import Bar, Instruction, fees, match, sold_cost
 from app.sandbox.parameters import PaperParameters
+from app.sandbox.trailing import calculate_trailing_sl, should_update_trailing_sl
 
 
 class PaperError(ValueError):
@@ -207,8 +208,9 @@ async def submit(
                 raise PaperError("Realistic mode allows one open position or buy order per symbol")
         row = await conn.fetchrow(
             """INSERT INTO app.paper_orders
-                 (account_id,request_id,symbol,side,kind,status,quantity,instruction,created_at)
-               VALUES ($1,$2,$3,$4,$5,'pending',$6,$7::jsonb,$8) RETURNING *""",
+                 (account_id,request_id,symbol,side,kind,status,quantity,instruction,created_at,
+                  trailing_stop_bps,trailing_stop_paisa_min,current_stop_paisa)
+               VALUES ($1,$2,$3,$4,$5,'pending',$6,$7::jsonb,$8,$9,$10,$11) RETURNING *""",
             account_id,
             request_id,
             instruction.symbol,
@@ -217,6 +219,9 @@ async def submit(
             instruction.quantity,
             instruction.model_dump_json(),
             now,
+            instruction.trailing_stop_bps,
+            instruction.trailing_stop_paisa_min,
+            instruction.risk_stop_paisa,
         )
         return dict(row)
 
@@ -585,7 +590,14 @@ async def _automatic_exits(
         bar = bars.get(entry["symbol"])
         if bar is None:
             continue
-        trigger = detect_exit(instruction, bar, int(entry["filled"]))
+        # A daily OHLC bar cannot establish whether its high preceded its low.  Evaluate
+        # today's exit using the stop earned through *previous* finalised sessions, then
+        # tighten the trail from today's high for the next session.  This is deliberately
+        # conservative and prevents an in-bar look-ahead from inventing a better exit.
+        current_stop = entry["current_stop_paisa"] or instruction.risk_stop_paisa
+        trigger = detect_exit(
+            instruction, bar, int(entry["filled"]), current_stop_paisa=current_stop
+        )
         if trigger is None:
             continue
         exit_order = exit_instruction(instruction, trigger, int(entry["filled"]))
@@ -637,6 +649,39 @@ async def _automatic_exits(
             order["id"],
             trigger.reason,
             at,
+            entry["id"],
+        )
+    # Only surviving entries receive a tighter stop, effective from the next replay day.
+    # Keep it after exit processing so a day that hit the original stop never benefits from
+    # an earlier unknown intraday high.
+    for entry in entries:
+        if entry["symbol"] not in holdings:
+            continue
+        if not entry["trailing_stop_bps"]:
+            continue
+        instruction = Instruction.model_validate_json(entry["instruction"])
+        bar = bars.get(entry["symbol"])
+        if bar is None:
+            continue
+        highest = max(int(entry["highest_paisa_seen"] or 0), bar.high)
+        current_stop = entry["current_stop_paisa"] or instruction.risk_stop_paisa
+        candidate = calculate_trailing_sl(
+            buy_order=True,
+            highest_paisa_seen=highest,
+            lowest_paisa_seen=0,
+            trailing_stop_bps=int(entry["trailing_stop_bps"]),
+            trailing_stop_paisa_min=int(entry["trailing_stop_paisa_min"]),
+        )
+        new_stop = (
+            candidate
+            if should_update_trailing_sl(current_stop, candidate, buy_order=True)
+            else current_stop
+        )
+        await conn.execute(
+            """UPDATE app.paper_orders SET highest_paisa_seen=$1,current_stop_paisa=$2
+               WHERE id=$3""",
+            highest,
+            new_stop,
             entry["id"],
         )
     return fills, cash, realized

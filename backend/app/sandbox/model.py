@@ -25,6 +25,8 @@ class Instruction(BaseModel):
     trigger_paisa: int | None = Field(default=None, gt=0, le=10**9)
     risk_stop_paisa: int | None = Field(default=None, gt=0, le=10**9)
     risk_target_paisa: int | None = Field(default=None, gt=0, le=10**9)
+    trailing_stop_bps: int = Field(default=0, ge=0, le=BPS)
+    trailing_stop_paisa_min: int = Field(default=0, ge=0, le=10**9)
 
     @model_validator(mode="after")
     def prices(self) -> Self:
@@ -36,6 +38,10 @@ class Instruction(BaseModel):
             self.risk_stop_paisa is not None or self.risk_target_paisa is not None
         ):
             raise ValueError("A risk stop applies to new buy orders")
+        if self.side == "sell" and (self.trailing_stop_bps or self.trailing_stop_paisa_min):
+            raise ValueError("A trailing stop applies to new buy orders")
+        if self.trailing_stop_bps and self.risk_stop_paisa is None:
+            raise ValueError("A trailing stop requires a risk stop")
         if (
             self.risk_stop_paisa is not None
             and self.risk_target_paisa is not None
