@@ -26,7 +26,7 @@ function optStr(v: unknown, what: string): string | null {
   return v === null || v === undefined ? null : str(v, what);
 }
 
-export type JobStatus = "idle" | "running" | "ok" | "failed";
+export type JobStatus = "idle" | "running" | "ok" | "failed" | "stopped";
 
 export type IntradayProgress = {
   rounds: number;
@@ -67,7 +67,13 @@ export function parseJobs(body: unknown): IngestJob {
   if (!isRecord(body) || typeof body.busy !== "boolean" || !isRecord(body.last)) fail("jobs");
   const last = body.last;
   const status = last.status;
-  if (status !== "idle" && status !== "running" && status !== "ok" && status !== "failed")
+  if (
+    status !== "idle" &&
+    status !== "running" &&
+    status !== "ok" &&
+    status !== "failed" &&
+    status !== "stopped"
+  )
     fail("status");
   const result = isRecord(last.result) ? last.result : {};
   const backfill = isRecord(result.backfill) ? result.backfill : null;

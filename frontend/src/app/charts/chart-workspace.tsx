@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { type CandlePage, FinTrackFeed, INTERVALS } from "@/lib/charts";
+import { apiChartInterval, type CandlePage, FinTrackFeed, INTERVALS } from "@/lib/charts";
 import { currentTheme, THEME_EVENT, type Theme } from "@/lib/theme";
+
+import { IndicatorPanel } from "./indicator-panel";
 
 type Provenance = { source: string; omitted: number; adjustment: string; interval: string };
 type Adjustment = "adjusted" | "raw";
@@ -28,17 +30,26 @@ export function ChartWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [adjustment, setAdjustment] = useState<Adjustment>("adjusted");
   const [rawOffered, setRawOffered] = useState(false);
+  const [selection, setSelection] = useState<{ symbol: string; interval: string } | null>(null);
 
   /** Re-read what the feed offers for the widget's current symbol + interval. */
   const refreshVariants = useCallback(async () => {
     const w = widgetRef.current;
     const feed = feedRef.current;
     if (!w || !feed) return;
-    const caps = await feed.dataVariants({
-      symbol: w.symbol(),
-      exchange: w.exchange(),
-      interval: w.interval(),
-    });
+    const symbol = w.symbol();
+    const exchange = w.exchange();
+    const interval = w.interval();
+    if (!symbol || !exchange || !interval) return;
+    setSelection({ symbol: `${exchange}:${symbol}`, interval: apiChartInterval(interval) });
+    const caps = await feed.dataVariants({ symbol, exchange, interval });
+    if (
+      widgetRef.current !== w ||
+      w.symbol() !== symbol ||
+      w.exchange() !== exchange ||
+      w.interval() !== interval
+    )
+      return;
     const offered = caps.adjustments?.includes("raw") ?? false;
     setRawOffered(offered);
     if (!offered) {
@@ -62,7 +73,7 @@ export function ChartWorkspace() {
             source: page.source,
             omitted: page.omittedUnusable,
             adjustment: req.variant?.adjustment ?? "adjusted",
-            interval: req.interval,
+            interval: apiChartInterval(req.interval),
           }),
         );
         const widget = createWidget(host.current, {
@@ -70,6 +81,8 @@ export function ChartWorkspace() {
           intervals: INTERVALS,
           theme: currentTheme(),
           persist: "fintrack-v2-charts",
+          // The layout can restore studies and the interval. Raw prices are a per-visit choice.
+          variant: { adjustment: "adjusted" },
           indicators: true,
         });
         feedRef.current = feed;
@@ -83,19 +96,6 @@ export function ChartWorkspace() {
             setAdjustment(variant?.adjustment === "raw" ? "raw" : "adjusted"),
           ),
         ];
-        await widget.ready;
-        // a link from the Stocks page (?symbol=NSE:XXX) opens that stock, keeping the interval
-        const linked = new URLSearchParams(window.location.search).get("symbol");
-        const [linkedExchange, linkedSymbol] = linked?.includes(":") ? linked.split(":", 2) : [];
-        if (linkedExchange && linkedSymbol) {
-          widget.setSymbol(linkedSymbol, linkedExchange);
-          if (!widget.interval()) widget.setInterval("D");
-        } else if (!widget.symbol()) {
-          // first visit: nothing restored from the saved layout
-          widget.setSymbol("NIFTY 50", "NSE");
-          widget.setInterval("D");
-        }
-        refresh();
         const onTheme = (e: Event) => widget.setTheme((e as CustomEvent<Theme>).detail);
         window.addEventListener(THEME_EVENT, onTheme);
         destroy = () => {
@@ -104,6 +104,20 @@ export function ChartWorkspace() {
           widgetRef.current = null;
           widget.destroy();
         };
+        await widget.ready;
+        if (destroyed) return;
+        // a link from the Stocks page (?symbol=NSE:XXX) opens that stock, keeping the interval
+        const linked = new URLSearchParams(window.location.search).get("symbol");
+        const [linkedExchange, linkedSymbol] = linked?.includes(":") ? linked.split(":", 2) : [];
+        if (linkedExchange && linkedSymbol) {
+          widget.setSymbol(linkedSymbol, linkedExchange);
+          if (!widget.interval()) widget.setInterval("1d");
+        } else if (!widget.symbol()) {
+          // first visit: nothing restored from the saved layout
+          widget.setSymbol("NIFTY 50", "NSE");
+          widget.setInterval("1d");
+        }
+        refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -141,13 +155,20 @@ export function ChartWorkspace() {
             </button>
           ))}
         </div>
-        {!rawOffered && (
+        {adjustment === "raw" ? (
           <span className="text-xs text-muted-foreground">
-            Raw isn&apos;t available here: indices have one series, and 3m–1h are derived from the
-            adjusted 1-minute bars.
+            Raw prices show jumps from splits and bonus issues.
           </span>
+        ) : (
+          !rawOffered && (
+            <span className="text-xs text-muted-foreground">
+              Raw isn&apos;t available here: indices have one series, and 3m–1h are derived from the
+              adjusted 1-minute bars.
+            </span>
+          )
         )}
       </div>
+      {selection && <IndicatorPanel {...selection} adjustment={adjustment} />}
       <div ref={host} className="h-[calc(100vh-13rem)] min-h-[420px] w-full" />
       <p className="text-xs text-muted-foreground" aria-live="polite">
         {provenance ? (

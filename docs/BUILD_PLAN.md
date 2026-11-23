@@ -36,18 +36,36 @@ was opened 2026-11-20 (DEC-GATE1). Details live where linked; this list is only 
    MCX commodities are paused at the user's request. CDS history is reachable and requires a
    decision on exact sub-paisa prices.
    Live FRED ingestion waits for the key, and the calendar uses a reviewed CSV.
+   **Priority 2026-11-22:** resolve the 27 remaining participant-file errors. Preserve
+   fractional NSE contract figures exactly, identify how to surface source totals that
+   disagree with their components, verify title/date anomalies against source evidence,
+   and retry recoverable files. Keep unresolved reports explicitly flagged.
 2. **Monday 2026-11-23:** Kite login → full-session tick probe to size storage under DEC-1D-*.
 3. **Daily re-measure** — the full-fit speedup is implemented. Check the full morning job's timing
    before 1d is live so it ends before pre-open capture. Incremental re-fit remains a separate follow-up.
-4. **1d — ticks, option chain, Parquet cold tier** (DEC-1D-DEPS/TICKS/CHAIN/GREEKS). From
-   2026-12-07 the capture window must cover derivatives to 15:45 (SEBI closing-auction change).
-5. **1f — F&O history** from the approved NSE F&O archive and Kite active contracts (DEC-1D-OWNERS).
-6. **Phase 1 close-out:** every slice's coverage rows green on Admin → Phase 2.
+4. **1d — ticks, option chain, Parquet cold tier** — built 2026-11-21 (DEC-1D-*), tested on recorded/synthetic data only.
+   **Monday 2026-11-23:** verify on live Kite (real packet layout, tick volume per minute, export of the first full day), then tune
+   `TICKS_HOT_DAYS` and the buffer sizes. From 2026-12-07 the window already covers derivatives to 15:45.
+5. **1f — F&O history** — built 2026-11-21 (NSE F&O archive, `app.fo_daily`); goes live when the backend is restarted after the 1e
+   download finishes. Kite active contracts are covered by 1d.
+6. **Backfill database safeguards (planned):** configure an idle-in-transaction timeout on
+   FinTrack's PostgreSQL connections so an abandoned write releases its locks. Bound lock waits
+   during backfill writes and show a specific error in Admin if retries are exhausted. Resume
+   from the committed file ledger after a retry. Verify with two database sessions that an
+   abandoned transaction releases its lock, committed rows survive, and retrying the interrupted
+   file adds no duplicates.
+7. **Phase 1 close-out:** every slice's coverage rows green on Admin → Phase 2.
 
 **Phase 2 — Indicators + analytics + tests (~1–2 wk).** Full TA suite (config-driven warmup,
 EMA200 only ≥200 bars) + options analytics (PCR, max-pain, gamma, IV rank). Golden tests vs
 reference lib, convergence tests, regression-snapshot harness seeded. *Gate:* golden +
 convergence green on real Phase-1 data.
+
+**Phase 2 workspace implementation.** Technical analytics and options analytics use read-only
+research endpoints. Technical checks use stored NSE candles and a recorded Kite minute fixture.
+Options checks use independently priced fixtures and TimescaleDB integration tests. Live
+option-chain validation and observations for the configured IV-rank tenor remain part of the
+exit gate. Complete the Phase 1 close-out before deploying the analytics.
 
 **Phase 3 — Scoring pipeline + strategies + calibration (~2–3 wk).** Deterministic swing +
 intraday pipelines; **full strategy catalogue, long + short** (shorts behind runtime flag);
@@ -55,16 +73,44 @@ one calibrated conviction shared across both; News/research LLM agent (fail-clos
 strategy config. *Gate:* every candidate number reproducible by hand; same inputs → same
 conviction across paths; regression snapshot blessed.
 
+**Phase 3 candidate explanation.** Each suggestion must include a visible explanation when
+it first appears. Use the same evaluated facts as the scorer. Show the strategy and direction,
+the trigger and timeframe, each rule's observed value and threshold, the data timestamp and
+any missing or stale inputs, and the condition that invalidates the setup when the strategy
+defines one. For a futures or options suggestion, show how the specific contract qualified,
+including the available expiry, strike, liquidity and pricing checks. Explain the conviction
+score with its calibration evidence when available and label it uncalibrated otherwise.
+Phase 8 adds guided lessons and the on-demand Explainer agent.
+
+**Phase 3 local preview.** Candidates evaluates stored finalized daily and 5-minute
+candles. Validate the live 5-minute input and actual Kite contract snapshots before enabling
+scheduled scans. Daily futures checks require verified 1f data. Conviction stays uncalibrated
+until backtest evaluation publishes enough outcomes for the applicable strategy revision and
+instrument. The news provider needs a live acceptance check before enabling it.
+
 **Phase 4 — Risk & portfolio (~1–2 wk).** Sizing modes (fixed-% default, fixed-lots, Kelly-
 gated), risk-% vs notional-cap, lot-aware, correlation-aware sizing, portfolio caps + daily-
 loss circuit breaker, structure/ATR targets. *Gate:* sizing reproducible; caps enforced in
 tests.
+
+**Phase 4 implementation status.** Paper trade plans and portfolio check calculations are
+verified on held fixtures and stored candles. Active portfolio balances/display, measured
+correlation and broker margin require their data inputs. Kelly stays gated until measured
+outcomes meet the configured validated-history minimum. Active trailing uses an actual
+paper fill and subsequent prices in Phase 5.
 
 **Phase 5 — Paper sandbox + safety (~2 wk).** Order types (MARKET/LIMIT/SL-M/GTT), fills with
 slippage + full charge stack + partial fills, MTM, TSL, EOD square-off, SEMI/FULL-auto per
 strategy; DB-sourced guardrails, idempotency, persisted kill-switch/pause, security
 incidents, auth + webhook secret. *Gate:* guardrail/kill-switch/idempotency tests green;
 paper P&L matches hand-computed cost example.
+
+**Phase 5 manual replay slice.** The Paper trading workspace simulates NSE equity fills on
+finalized as-traded daily bars. Replay accounts, orders, fills, positions, transaction charges,
+P&L and safety controls persist in the paper ledger. Account-specific fill assumptions are
+fixed at creation so a configuration change does not change an existing replay. Validate
+live marking, derivative contracts and automatic stop/target/trailing and approval flows
+before closing the full phase.
 
 **Phase 6 — Backtesting (~2–3 wk).** Signal + **portfolio** backtesting, walk-forward
 (in/out-of-sample), same cost model, chronological drawdown, **backtest↔live↔paper parity**,

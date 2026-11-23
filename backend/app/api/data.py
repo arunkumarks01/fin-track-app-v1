@@ -20,6 +20,8 @@ POST /api/data/ingest/news | ingest/fred → fetch now (bearer)
 GET  /api/data/news, /macro    → recent headlines + feed status; FRED series + status
 POST /api/data/calendar/import → reviewed economic-calendar CSV, all-or-nothing (bearer)
 GET  /api/data/calendar[?days] → upcoming economic events with their source links
+GET  /api/data/ticks           → 1d: tick capture status, Parquet export ledger, chain snapshots
+GET  /api/data/chain?underlying → the newest raw option-chain snapshot of one underlying
 GET  /api/data/candles         → paged chart candles per interval, adjusted or as-traded
 """
 
@@ -40,6 +42,7 @@ from app.data.econ_calendar import (
     parse_calendar_csv,
     upcoming,
 )
+from app.data.fo_report import fo_summary
 from app.data.instruments import GIFT_NIFTY_SYMBOL
 from app.data.intraday import DERIVED_MINUTES, derive_bars
 from app.data.intraday_coverage import intraday_report, review_sessions
@@ -54,6 +57,7 @@ from app.data.reference_report import (
     reference_ledger,
 )
 from app.data.stock import stock_profile
+from app.data.tick_report import latest_chain, ticks_status
 
 router = APIRouter(prefix="/api/data")
 
@@ -363,6 +367,40 @@ async def get_reference(request: Request, days: int = 20) -> JSONResponse:
                 },
             }
         )
+
+
+@router.post("/ingest/fo-history")
+async def start_fo_history(request: Request, retry_missing: bool = False) -> JSONResponse:
+    runner = _runner(request)
+    if not runner.start(lambda: runner.fo_history_ingest(retry_missing)):
+        return _busy()
+    return JSONResponse({"started": True}, status_code=202)
+
+
+@router.get("/fo")
+async def get_fo(request: Request) -> JSONResponse:
+    """F&O history coverage: ledger by status, stored range, rows, and the biggest underlyings."""
+    async with request.app.state.pool.acquire() as conn:
+        return JSONResponse(await fo_summary(conn))
+
+
+@router.get("/ticks")
+async def get_ticks(request: Request) -> JSONResponse:
+    """Slice 1d status: live capture, recent runs, Parquet export ledger, chain snapshots."""
+    cap = getattr(request.app.state, "capture", None)
+    async with request.app.state.pool.acquire() as conn:
+        return JSONResponse(
+            await ticks_status(conn, cap.stats.to_dict() if cap is not None else None)
+        )
+
+
+@router.get("/chain")
+async def get_chain(request: Request, underlying: str) -> JSONResponse:
+    async with request.app.state.pool.acquire() as conn:
+        chain = await latest_chain(conn, underlying.upper())
+    if chain is None:
+        return JSONResponse({"detail": f"no snapshot stored for {underlying}"}, status_code=404)
+    return JSONResponse(chain)
 
 
 @router.post("/ingest/news")

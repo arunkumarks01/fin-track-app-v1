@@ -5,14 +5,8 @@ import { Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useState } from "react";
 
-import { type ChartSymbol, parseSymbols } from "@/lib/charts";
+import { type ChartSymbol, fetchSymbols } from "@/lib/charts";
 import { cn } from "@/lib/utils";
-
-async function fetchSymbols(): Promise<ChartSymbol[]> {
-  const res = await fetch("/api/data/symbols", { cache: "no-store" });
-  if (!res.ok) throw new Error(`symbols request failed: HTTP ${res.status}`);
-  return parseSymbols(await res.json());
-}
 
 /** Prefix matches first, then anywhere in the name. */
 export function rankSymbols(list: ChartSymbol[], q: string, limit = 12): ChartSymbol[] {

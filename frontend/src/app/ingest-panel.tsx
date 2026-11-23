@@ -24,6 +24,7 @@ const STATUS_STYLE: Record<IngestJob["status"], { label: string; className: stri
   running: { label: "● running", className: "text-primary" },
   ok: { label: "✓ finished", className: "text-gain" },
   failed: { label: "✕ failed", className: "text-loss" },
+  stopped: { label: "■ stopped", className: "text-warn" },
 };
 
 export function IngestPanel() {

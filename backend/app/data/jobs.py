@@ -19,6 +19,7 @@ from app.core.config import Settings
 from app.data.adjustment import AnalysisReport, run_adjustment_analysis
 from app.data.extract_daily import RunReport, last_final_daily_session, run_daily_backfill
 from app.data.extract_intraday import IntradayReport, run_intraday_backfill
+from app.data.fo_load import FoReport, run_fo_load
 from app.data.fred import fetch_fred
 from app.data.instruments import (
     InstrumentsError,
@@ -50,7 +51,7 @@ DB_LOST: tuple[type[Exception], ...] = (
 @dataclass
 class JobState:
     name: str
-    status: str = "idle"  # idle | running | ok | failed
+    status: str = "idle"  # idle | running | ok | failed | stopped
     started_at: datetime | None = None
     finished_at: datetime | None = None
     result: dict[str, Any] = field(default_factory=dict)
@@ -89,13 +90,46 @@ class IngestRunner:
         self._news_lock = asyncio.Lock()
         self._fred_lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
+        self._active: dict[str, tuple[JobState, asyncio.Task[Any]]] = {}
+        self._background: dict[str, asyncio.Task[JobState]] = {}
+        self._service_locks: dict[str, asyncio.Lock] = {}
         self.last = JobState("none")
         # newest first; in memory only, so it starts empty after a restart (the Admin page says so)
         self.history: deque[JobState] = deque(maxlen=settings.job_history_size)
 
     @property
     def busy(self) -> bool:
-        return self._lock.locked()
+        return self._lock.locked() or (self._task is not None and not self._task.done())
+
+    @property
+    def active(self) -> bool:
+        return self.busy or bool(self._active or self._background)
+
+    async def _execute(
+        self, state: JobState, work: Callable[[], Awaitable[dict[str, Any]]]
+    ) -> JobState:
+        task = asyncio.current_task()
+        if task is None:
+            raise RuntimeError("Job execution requires an asyncio task")
+        name = state.name
+        self._active[name] = state, task
+        try:
+            state.result = await work()
+            state.error = state.result.get("stopped_reason")
+            state.status = "failed" if state.error else "ok"
+        except asyncio.CancelledError:
+            state.status = "stopped"
+            raise
+        except (KiteError, InstrumentsError, NseArchiveError, ValueError) as exc:
+            state.status, state.error = "failed", str(exc)
+            log.error("job %s failed: %s", name, exc)
+        except Exception as exc:
+            state.status, state.error = "failed", f"{type(exc).__name__}: {exc}"
+            log.exception("job %s crashed", name)
+        finally:
+            self._active.pop(name)
+            state.finished_at = self._clock.now()
+        return state
 
     def _require_client(self) -> KiteClient:
         if self._client is None:
@@ -128,22 +162,14 @@ class IngestRunner:
 
     async def _run(self, name: str, work: Callable[[], Awaitable[dict[str, Any]]]) -> JobState:
         state = JobState(name, "running", started_at=self._clock.now())
-        self.last = state
         self.history.appendleft(state)
+        if self._lock.locked() or (self.busy and asyncio.current_task() is not self._task):
+            state.status, state.error = "failed", "Another ingestion job is already running"
+            state.finished_at = self._clock.now()
+            return state
+        self.last = state
         async with self._lock:
-            try:
-                state.result = await work()
-                state.status = "failed" if state.result.get("stopped_reason") else "ok"
-                state.error = state.result.get("stopped_reason")
-            except (KiteError, InstrumentsError, NseArchiveError, ValueError) as exc:
-                state.status, state.error = "failed", str(exc)
-                log.error("job %s failed: %s", name, exc)
-            except Exception as exc:  # never let a job kill the process silently
-                state.status, state.error = "failed", f"{type(exc).__name__}: {exc}"
-                log.exception("job %s crashed", name)
-            finally:
-                state.finished_at = self._clock.now()
-        return state
+            return await self._execute(state, work)
 
     async def _run_light(
         self, name: str, lock: asyncio.Lock, work: Callable[[], Awaitable[dict[str, Any]]]
@@ -155,16 +181,72 @@ class IngestRunner:
             state.finished_at = self._clock.now()
             return state
         async with lock:
+            return await self._execute(state, work)
+
+    def service(
+        self, name: str, work: Callable[[], Awaitable[dict[str, Any]]]
+    ) -> Callable[[], Awaitable[JobState]]:
+        lock = self._service_locks.setdefault(name, asyncio.Lock())
+
+        async def run() -> JobState:
+            return await self._run_light(name, lock, work)
+
+        return run
+
+    def start_service(self, name: str, work: Callable[[], Awaitable[JobState]]) -> bool:
+        if name in self._active or name in self._background:
+            return False
+
+        async def run() -> JobState:
+            return await work()
+
+        task = asyncio.create_task(run())
+        self._background[name] = task
+        task.add_done_callback(lambda _: self._background.pop(name, None))
+        return True
+
+    def stop(self, name: str, started_at: datetime) -> bool:
+        active = self._active.get(name)
+        if active is None:
+            return False
+        state, task = active
+        # Daily ingestion can invoke FRED in the same task. Stop the owning run only.
+        if state.started_at != started_at or task.cancelling():
+            return False
+        if state is not self.last and any(
+            other is task for key, (_, other) in self._active.items() if key != name
+        ):
+            return False
+        return task.cancel()
+
+    async def _resuming(self, name: str, state: JobState, run: Callable[[], Awaitable[Any]]) -> Any:
+        """Run a resumable load; if the database connection is lost (the SSH tunnel drops every
+        ~20-30 min), wait and run it again. Every loader skips what its ledger already holds, so
+        a re-run continues where it stopped. Gives up after INTRADAY_DB_RETRIES in a row."""
+        attempt = 0
+        while True:
             try:
-                state.result = await work()
-                state.status = "failed" if state.result.get("stopped_reason") else "ok"
-                state.error = state.result.get("stopped_reason")
-            except Exception as exc:  # never let a job kill the process silently
-                state.status, state.error = "failed", f"{type(exc).__name__}: {exc}"
-                log.exception("job %s crashed", name)
-            finally:
-                state.finished_at = self._clock.now()
-        return state
+                result = await run()
+            except DB_LOST as exc:
+                attempt += 1
+                if attempt > self._s.intraday_db_retries:
+                    raise
+                log.warning(
+                    "%s: database lost (%s); resume %d/%d in %.0fs",
+                    name,
+                    type(exc).__name__,
+                    attempt,
+                    self._s.intraday_db_retries,
+                    self._s.intraday_db_retry_wait_seconds,
+                )
+                state.result = {
+                    **state.result,
+                    "resumes": attempt,
+                    "retry_error": f"{type(exc).__name__}: database connection interrupted",
+                }
+                await self._sleep(self._s.intraday_db_retry_wait_seconds)
+            else:
+                return result
 
     async def news_fetch(self) -> JobState:
         async def work() -> dict[str, Any]:
@@ -204,7 +286,10 @@ class IngestRunner:
                 out["stopped_reason"] = after["stopped_reason"]
                 if out["stopped_reason"] is None and self._s.reference_after_daily:
                     # Phase 1e: NSE's dated files and the latest deal files
-                    ref = await self._reference(self.last)
+                    ref = await self._resuming(
+                        "reference", self.last, lambda: self._reference(self.last)
+                    )
+                    out["resumes"] = self.last.result.get("resumes", 0)
                     out["reference"] = ref.totals()
                     out["stopped_reason"] = ref.stopped_reason
             if report.stopped_reason is None and self._s.fred_api_key is not None:
@@ -303,7 +388,12 @@ class IngestRunner:
         """Incremental NSE archive load, then re-measure every symbol's adjustment."""
 
         async def work() -> dict[str, Any]:
-            return await self._nse_and_analysis(self.last, retry_missing)
+            out: dict[str, Any] = await self._resuming(
+                "nse archive",
+                self.last,
+                lambda: self._nse_and_analysis(self.last, retry_missing),
+            )
+            return out
 
         return await self._run("nse_archive_ingest", work)
 
@@ -328,14 +418,56 @@ class IngestRunner:
             self._pool, self._nse_client(), self._s, self._clock, last_final, **kwargs
         )
 
+    async def fo_history_ingest(self, retry_missing: bool = False) -> JobState:
+        """Slice 1f: daily futures and options history from NSE's F&O bhavcopy archive."""
+
+        async def work() -> dict[str, Any]:
+            def progress(r: FoReport) -> None:
+                self.last.result = {**self.last.result, "progress": r.totals()}
+
+            last_final = last_final_daily_session(
+                self._clock.now(), self._s.daily_bar_final_next_day_ist
+            )
+            report = await self._resuming(
+                "fo history",
+                self.last,
+                lambda: run_fo_load(
+                    self._pool,
+                    self._nse_client(),
+                    self._s,
+                    self._clock,
+                    last_final,
+                    progress,
+                    retry_missing,
+                ),
+            )
+            return {
+                "resumes": self.last.result.get("resumes", 0),
+                "fo": report.totals(),
+                "stopped_reason": report.stopped_reason,
+            }
+
+        return await self._run("fo_history_ingest", work)
+
     async def reference_ingest(
         self, datasets: list[str] | None = None, retry_missing: bool = False
     ) -> JobState:
         """Load the requested NSE reference datasets, resuming from their ledgers."""
 
         async def work() -> dict[str, Any]:
-            report = await self._reference(self.last, datasets, retry_missing)
-            return {"reference": report.totals(), "stopped_reason": report.stopped_reason}
+            report = await self._resuming(
+                "reference", self.last, lambda: self._reference(self.last, datasets, retry_missing)
+            )
+            return {
+                "resumes": self.last.result.get("resumes", 0),
+                "reference": report.totals(),
+                "stopped_reason": report.stopped_reason
+                or (
+                    f"{report.errors} reference files could not be loaded"
+                    if report.errors
+                    else None
+                ),
+            }
 
         return await self._run("reference_ingest", work)
 
@@ -369,11 +501,14 @@ class IngestRunner:
 
     def start(self, coro_factory: Callable[[], Awaitable[JobState]]) -> bool:
         """Start a background job unless one is running. Returns False when busy."""
-        if self.busy or (self._task is not None and not self._task.done()):
+        if self.busy:
             return False
 
         async def runner() -> None:
-            await coro_factory()
+            try:
+                await coro_factory()
+            except asyncio.CancelledError:
+                return
 
         self._task = asyncio.get_running_loop().create_task(runner())
         return True
@@ -382,7 +517,12 @@ class IngestRunner:
         if self._task is not None:
             await self._task
 
-    def cancel(self) -> None:
+    async def cancel(self) -> None:
         """On shutdown: the in-flight window's transaction rolls back; the cursor stays true."""
-        if self._task is not None and not self._task.done():
-            self._task.cancel()
+        tasks = {task for _, task in self._active.values()} | set(self._background.values())
+        if self._task is not None:
+            tasks.add(self._task)
+        for task in tasks:
+            if not task.done() and not task.cancelling():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)

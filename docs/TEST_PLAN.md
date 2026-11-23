@@ -29,7 +29,7 @@ in-memory cache fixture. These make every test deterministic.
 - **P0:** CI runs a real-but-empty suite green; lint/type clean.
 - **P1 data:** coverage report green; dedup-by-date enforced (same day twice → 1 row); validation rejects bad bars to quarantine; split-bar kept not deleted.
 - **P2 indicators:** **golden** (vs reference) + **convergence** (EMA warmup; EMA200 unavailable <200 bars) green on real P1 data.
-- **P3 scoring:** every candidate number reproducible by hand; **same inputs → same conviction across swing/intraday**; news agent fails closed; regression snapshot blessed.
+- **P3 scoring:** every candidate number reproducible by hand; **same inputs → same conviction across swing/intraday**; news agent fails closed; regression snapshot blessed. Verify that each suggestion's visible explanation matches the evaluated rules, timestamps, contract checks and calibration status.
 - **P4 risk:** sizing reproducible; Realistic-mode caps enforced; **Learning mode never blocks + always shows risk** (asserted).
 - **P5 sandbox:** kill-switch/pause blocks all order paths + survives restart; idempotency rejects duplicates; paper P&L == hand-computed cost example.
 - **P6 backtest:** **chronological** max-drawdown == hand value; **backtest↔live↔paper parity** green; zero-edge fixture net-negative after costs.
@@ -45,6 +45,12 @@ agent score, and the candidate list to committed golden JSON → CI diffs. Any n
 **fails** with a readable diff; intended changes are re-blessed with `--snapshot-update` after
 a human reviews the diff. This is the net for *unanticipated* regressions — build it in P2,
 extend it every phase.
+
+Phase 2 runs the indicator and option reference comparisons from
+`tests/fixtures/analytics_golden.json`. The generator uses TA-Lib 0.6.8 and QuantLib 1.40 from
+an isolated environment. CI compares the checked-in values without those dependencies.
+`pytest tests/unit/test_phase2_snapshot.py --snapshot-update` intentionally regenerates
+`analytics_regression.json`. Review the diff before accepting the updated baseline.
 
 ## Parity tests (the honest-validator net)
 - backtest detector path vs live scan path → identical signals for the same bar.

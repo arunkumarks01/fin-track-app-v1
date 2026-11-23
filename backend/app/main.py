@@ -122,7 +122,7 @@ def create_app(
             yield
         finally:
             if ingest is not None:
-                ingest.cancel()
+                await ingest.cancel()
             if scheduler is not None and scheduler.running:
                 scheduler.shutdown(wait=False)
             await http.aclose()

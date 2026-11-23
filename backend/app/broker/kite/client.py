@@ -134,6 +134,7 @@ class KiteClient:
         self._sleep = sleep
         self.historical_limiter = RateLimiter(settings.kite_historical_rps, clock, sleep)
         self.default_limiter = RateLimiter(settings.kite_default_rps, clock, sleep)
+        self.quote_limiter = RateLimiter(settings.kite_quote_rps, clock, sleep)
 
     def _headers(self) -> dict[str, str]:
         session = self._sessions.current()
@@ -145,7 +146,10 @@ class KiteClient:
         }
 
     async def _get(
-        self, path: str, limiter: RateLimiter, params: dict[str, str] | None = None
+        self,
+        path: str,
+        limiter: RateLimiter,
+        params: dict[str, str] | list[tuple[str, str | int | float | bool | None]] | None = None,
     ) -> httpx.Response:
         attempts = self._s.kite_max_retries + 1
         last: str = ""
@@ -219,6 +223,21 @@ class KiteClient:
         if not isinstance(candles, list):
             raise KiteRequestError("historical: candles is not a list")
         return candles
+
+    async def quote(self, keys: list[str]) -> dict[str, dict[str, Any]]:
+        """Full quotes for `EXCHANGE:TRADINGSYMBOL` keys (Kite: at most 500 per request, 1 req/s).
+        Keys Kite has no data for are simply absent from the result. Prices are exact Decimals."""
+        if not keys or len(keys) > 500:
+            raise ValueError("quote needs 1..500 instrument keys")
+        pairs: list[tuple[str, str | int | float | bool | None]] = [("i", k) for k in keys]
+        resp = await self._get("/quote", self.quote_limiter, pairs)
+        try:
+            data = resp.json(parse_float=Decimal)["data"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise KiteRequestError("quote: unexpected response shape") from exc
+        if not isinstance(data, dict):
+            raise KiteRequestError("quote: data is not a mapping")
+        return data
 
 
 def _error_type(resp: httpx.Response) -> str:

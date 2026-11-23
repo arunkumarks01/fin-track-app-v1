@@ -87,7 +87,8 @@ export function parseLoginUrl(body: unknown): string {
 
 // --- Admin overview -------------------------------------------------------------------------
 
-export type JobStatus = "idle" | "running" | "ok" | "failed";
+export type JobStatus = "idle" | "running" | "ok" | "failed" | "stopped";
+export type JobAction = "start" | "stop" | "pause" | "resume";
 
 export type JobRun = {
   name: string;
@@ -98,6 +99,8 @@ export type JobRun = {
   inserted: number | null;
   quarantined: number | null;
   symbolErrors: number | null;
+  retryError: string | null;
+  retries: number | null;
 };
 
 export type ScheduledJob = { id: string; nextRunAt: string | null; trigger: string };
@@ -115,6 +118,8 @@ export type AdminOverview = {
   jobRunning: boolean;
   scheduler: { running: boolean; jobs: ScheduledJob[] } | null;
   runs: JobRun[];
+  operableJobs: string[] | null;
+  referenceErrors: { dataset: string; date: string; error: string | null }[];
   quarantine: Count[];
   flags: Count[];
   cursorErrors: CursorError[];
@@ -123,7 +128,13 @@ export type AdminOverview = {
 function parseRun(v: unknown): JobRun {
   const r = rec(v, "run");
   const status = r.status;
-  if (status !== "idle" && status !== "running" && status !== "ok" && status !== "failed")
+  if (
+    status !== "idle" &&
+    status !== "running" &&
+    status !== "ok" &&
+    status !== "failed" &&
+    status !== "stopped"
+  )
     fail("run status");
   const result = isRecord(r.result) ? r.result : {};
   // daily → result.backfill; intraday → result.intraday; NSE archive → result.nse; repair →
@@ -135,6 +146,8 @@ function parseRun(v: unknown): JobRun {
       result.nse,
       result.repair,
       result.adjustments,
+      result.reference,
+      result.fo,
       result.progress,
     ].find(isRecord) ?? null;
   return {
@@ -143,9 +156,11 @@ function parseRun(v: unknown): JobRun {
     startedAt: optStr(r.started_at, "started_at"),
     finishedAt: optStr(r.finished_at, "finished_at"),
     error: optStr(r.error, "error"),
-    inserted: totals ? num(totals.inserted, "inserted") : null,
-    quarantined: totals ? num(totals.quarantined, "quarantined") : null,
-    symbolErrors: totals ? num(totals.errors, "errors") : null,
+    inserted: optNum(totals?.inserted, "inserted"),
+    quarantined: optNum(totals?.quarantined, "quarantined"),
+    symbolErrors: optNum(totals?.errors, "errors"),
+    retryError: optStr(result.retry_error, "retry error"),
+    retries: optNum(result.resumes, "retries"),
   };
 }
 
@@ -179,6 +194,18 @@ export function parseOverview(body: unknown): AdminOverview {
       }),
     },
     runs: arr(b.runs, "runs").map(parseRun),
+    operableJobs:
+      b.operable_jobs === undefined
+        ? null
+        : arr(b.operable_jobs, "operable jobs").map((id) => str(id, "operable job")),
+    referenceErrors: arr(b.reference_errors ?? [], "reference errors").map((item) => {
+      const e = rec(item, "reference error");
+      return {
+        dataset: str(e.dataset, "reference dataset"),
+        date: isoDate(e.date, "reference file date"),
+        error: optStr(e.error, "reference error detail"),
+      };
+    }),
     quarantine: parseCounts(b.quarantine, "reason"),
     flags: parseCounts(b.flags, "flag"),
     cursorErrors: arr(b.cursor_errors, "cursor_errors").map((x) => {
@@ -193,6 +220,25 @@ export function parseOverview(body: unknown): AdminOverview {
       };
     }),
   };
+}
+
+export async function controlJob(id: string, action: JobAction, token: string, startedAt?: string) {
+  const query = startedAt ? `?${new URLSearchParams({ started_at: startedAt })}` : "";
+  const res = await fetch(`/api/admin/jobs/${encodeURIComponent(id)}/${action}${query}`, {
+    method: "POST",
+    cache: "no-store",
+    redirect: "error",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    if (res.status === 401) throw new Error("Admin token rejected.");
+    throw new Error(
+      isRecord(body) && typeof body.detail === "string"
+        ? body.detail
+        : `Job control failed (HTTP ${res.status}).`,
+    );
+  }
 }
 
 // --- 1-minute completeness ------------------------------------------------------------------

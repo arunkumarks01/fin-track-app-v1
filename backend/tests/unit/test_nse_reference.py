@@ -168,6 +168,35 @@ def test_participant_file_must_be_the_right_kind_and_day() -> None:
         parse_participants(OI, date(2026, 11, 19), "oi", tolerance=2)
 
 
+def test_participant_archive_worksheet_artifacts_preserve_the_validated_rows() -> None:
+    expected = parse_participants(OI, D26, "oi", tolerance=2)
+    quoted = OI.replace('Nov 20, 2026""', 'Nov 20,"2026"""""')
+    trailing_period = OI.replace('Nov 20, 2026""', 'Nov 20, 2026.""')
+    prefix_year = OI.replace('""Participant', '",2026Participant').replace(
+        'Nov 20, 2026""', 'Nov 20"'
+    )
+    checksum = OI.replace("6804437,5636651\n", "6804437,5636651,12441088\n")
+    footer = OI + ',,,805930,,"8,43,91,042",,-25\n'
+    for text in (quoted, trailing_period, prefix_year, checksum, footer):
+        assert parse_participants(text, D26, "oi", tolerance=2) == expected
+    for text in (prefix_year, trailing_period):
+        with pytest.raises(NseArchiveMislabeled):
+            parse_participants(text, date(2025, 11, 20), "oi", tolerance=2)
+    with pytest.raises(NseArchiveError, match="full date"):
+        parse_participants(OI.replace(", 2026", ""), D26, "oi", tolerance=2)
+    with pytest.raises(NseArchiveError, match="has 15 values"):
+        parse_participants(checksum.replace("12441088", "12441089"), D26, "oi", tolerance=2)
+    with pytest.raises(NseArchiveError, match="unexpected participant row"):
+        parse_participants(OI + "Unknown,1\n", D26, "oi", tolerance=2)
+
+
+def test_participant_archive_handles_mixed_cr_and_crlf() -> None:
+    title, rows = VOL_2015.split("\n", 1)
+    mixed = title + "\r" + "\r".join(rows.strip().splitlines()) + "\r\n"
+    day = date(2015, 1, 5)
+    assert parse_participants(mixed, day, "volume") == parse_participants(VOL_2015, day, "volume")
+
+
 def test_participant_totals_that_dont_add_up_fail_the_whole_file() -> None:
     bad_total = VOL_2015.replace("TOTAL,459985", "TOTAL,459995")  # off by 10
     with pytest.raises(NseArchiveError, match="TOTAL"):

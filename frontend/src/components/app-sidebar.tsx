@@ -2,12 +2,15 @@
 
 import {
   CandlestickChart,
+  BookOpen,
   ChevronsLeft,
   ChevronsRight,
   Gauge,
   LayoutDashboard,
   LineChart,
   ShieldCheck,
+  ListFilter,
+  Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -32,6 +35,9 @@ const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/stocks", label: "Stocks", icon: LineChart },
   { href: "/charts", label: "Charts", icon: CandlestickChart },
+  { href: "/options", label: "Options", icon: Workflow },
+  { href: "/candidates", label: "Candidates", icon: ListFilter },
+  { href: "/paper", label: "Paper trading", icon: BookOpen },
 ];
 const SYSTEM = [{ href: "/admin", label: "Admin · Health", icon: ShieldCheck }];
 

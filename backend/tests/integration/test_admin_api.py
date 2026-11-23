@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -11,7 +12,7 @@ import pytest
 from app.core.tradingdate import MARKET_TZ
 from app.db.migrate import migrate
 from app.main import create_app
-from tests.conftest import build_settings
+from tests.conftest import TEST_TOKEN, build_settings
 from tests.fixtures.clock import FrozenClock
 
 pytestmark = pytest.mark.db
@@ -88,3 +89,55 @@ async def test_overview_reports_jobs_quarantine_flags_and_cursor_errors(
         ("1d", "NSE:AAA", "Kite 500"),
         ("1m", "NSE:CCC", "timeout"),
     ]
+
+
+async def test_controls_only_stop_the_selected_run_and_pause_future_work(
+    test_dsn: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = create_app(build_settings(database_url=test_dsn), clock=FrozenClock(NOW))
+    auth = {"Authorization": f"Bearer {TEST_TOKEN}"}
+    entered, cleaned_up = asyncio.Event(), asyncio.Event()
+
+    async def backfill(*args: Any) -> Any:
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleaned_up.set()
+
+    async with app.router.lifespan_context(app):
+        runner = app.state.ingest
+        monkeypatch.setattr(runner, "_reference", backfill)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://t"
+        ) as c:
+            ref = "/api/admin/jobs/reference_ingest"
+            schedule = "/api/admin/jobs/news_fetch"
+            assert (await c.post(f"{ref}/start")).status_code == 401
+            assert (await c.post(f"{ref}/start", headers=auth)).status_code == 202
+            await asyncio.wait_for(entered.wait(), timeout=1)
+            assert (await c.post(f"{ref}/start", headers=auth)).status_code == 409
+            assert (await c.post(f"{ref}/stop", headers=auth)).status_code == 422
+            assert (
+                await c.post(f"{ref}/stop", headers=auth, params={"started_at": TS.isoformat()})
+            ).status_code == 409
+            assert not cleaned_up.is_set()
+            assert (
+                await c.post(f"{ref}/stop", headers=auth, params={"started_at": NOW.isoformat()})
+            ).status_code == 202
+            await asyncio.wait_for(runner.wait(), timeout=1)
+            assert cleaned_up.is_set()
+            assert (await c.post(f"{schedule}/pause", headers=auth)).status_code == 200
+            overview = (await c.get("/api/admin/overview")).json()
+            assert overview["runs"][0]["status"] == "stopped"
+            assert overview["job_running"] is False
+            assert (
+                next(
+                    job["next_run_at"]
+                    for job in overview["scheduler"]["jobs"]
+                    if job["id"] == "news_fetch"
+                )
+                is None
+            )
+            assert (await c.post(f"{schedule}/resume", headers=auth)).status_code == 200
+            assert app.state.scheduler.get_job("news_fetch").next_run_time is not None

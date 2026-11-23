@@ -18,13 +18,22 @@ from __future__ import annotations
 import csv
 import io
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from app.core.money import rupees_to_paisa
 from app.data.nse_archive import PD_SERIES, NseArchiveError, NseArchiveMislabeled, Parsed
+
+
+def _csv_rows(text: str) -> Iterator[list[str]]:
+    try:
+        # Some NSE files mix CR and CRLF in the same report.
+        yield from csv.reader(io.StringIO(text, newline=""))
+    except csv.Error as exc:
+        raise NseArchiveError(f"Archive CSV could not be read: {exc}") from exc
+
 
 MTO_DATASET = "mto"
 PARTICIPANT_DATASETS = {"participant_oi": "oi", "participant_vol": "volume"}
@@ -152,7 +161,12 @@ CLIENT_TYPES = ("Client", "DII", "FII", "Pro")
 _LONG = (0, 2, 4, 5, 8, 9)  # indices into FIELDS that make up total_long
 _SHORT = (1, 3, 6, 7, 10, 11)
 _TITLE = {"oi": "open interest", "volume": "trading volume"}
-_AS_ON = re.compile(r"as on\s+([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2})(?:,\s*|\s+)(\d{4})", re.IGNORECASE)
+_AS_ON = re.compile(
+    r"as on\s+(?P<month>[a-z]{3})[a-z]*\.?\s+(?P<day>\d{1,2})"
+    r"(?:(?:\s*,\s*|\"|\s)+(?P<year>\d{4})\b\.?)?[,\s\"]*$",
+    re.IGNORECASE,
+)
+_PREFIX_YEAR = re.compile(r"^,\s*(\d{4})(?=Participant wise\b)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -175,20 +189,28 @@ class ParticipantRow:
 def parse_participants(text: str, d: date, kind: str, tolerance: int = 0) -> ParticipantFile:
     """The four participant rows, or an error for the whole file (never a partial day).
     Totals may differ from the legs / the TOTAL row by at most `tolerance` contracts."""
-    rows = [r for r in csv.reader(io.StringIO(text)) if any(c.strip() for c in r)]
+    rows = [r for r in _csv_rows(text) if any(c.strip() for c in r)]
     if len(rows) < 2:
         raise NseArchiveError("participant file is empty")
     # the title line is read raw: NSE sometimes double-quotes it (""…""), which makes a CSV
     # reader split it at the comma inside "Nov 20, 2026"
     first = next(ln for ln in text.splitlines() if ln.strip())
     title = first.strip().rstrip(",").strip().strip('"')
+    # Some NSE titles repeat the year in a second CSV cell.
+    title = re.sub(r'(\b\d{4}),\s*"?(\d{4})"?$', lambda m: m[1] if m[1] == m[2] else m[0], title)
     if _TITLE[kind] not in title.lower():
         raise NseArchiveError(f"participant file is not {_TITLE[kind]}: {title[:80]!r}")
     m = _AS_ON.search(title)
-    if m is None:
-        raise NseArchiveError(f"participant file title has no date: {title[:80]!r}")
+    prefix_year = _PREFIX_YEAR.match(title)
+    year = m and m["year"]
+    if not year and prefix_year is not None:
+        year = prefix_year[1]
+    if m is None or year is None:
+        raise NseArchiveError(f"participant file title has no full date: {title[:140]!r}")
+    if prefix_year is not None and year != prefix_year[1]:
+        raise NseArchiveError(f"participant file title has conflicting years: {title[:140]!r}")
     try:
-        got = datetime.strptime(f"{m.group(1)} {m.group(2)} {m.group(3)}", "%b %d %Y").date()  # noqa: DTZ007
+        got = datetime.strptime(f"{m['month']} {m['day']} {year}", "%b %d %Y").date()  # noqa: DTZ007
     except ValueError as exc:
         raise NseArchiveError(f"participant file date unreadable: {m.group(0)!r}") from exc
     if got != d:
@@ -205,8 +227,21 @@ def parse_participants(text: str, d: date, kind: str, tolerance: int = 0) -> Par
         if not cells:
             continue
         who = cells[0]
+        if (
+            not who
+            and "TOTAL" in found
+            and all(client in found for client in CLIENT_TYPES)
+            and all(not cell or re.fullmatch(r"-?\d+(?:,\d+)*", cell) for cell in cells[1:])
+        ):
+            continue  # archived worksheets sometimes append unlabeled calculation rows
         if who not in (*CLIENT_TYPES, "TOTAL") or who in found:
             raise NseArchiveError(f"unexpected participant row {who!r}")
+        if len(cells) == len(FIELDS) + 2:
+            long, short, combined = cells[-3:]
+            if all(c.isascii() and c.isdecimal() for c in (long, short, combined)) and int(
+                combined
+            ) == int(long) + int(short):
+                cells.pop()  # an unlabeled long-plus-short checksum
         if len(cells) != 1 + len(FIELDS):
             raise NseArchiveError(f"participant row {who!r} has {len(cells) - 1} values")
         try:
@@ -276,7 +311,7 @@ class DealFile:
 def parse_deals(text: str, kind: str) -> DealFile:
     """One deals file. All rows must carry the same date (the file covers one session);
     a row that doesn't parse is rejected. A header-only file has no date."""
-    rows = [r for r in csv.reader(io.StringIO(text)) if any(c.strip() for c in r)]
+    rows = [r for r in _csv_rows(text) if any(c.strip() for c in r)]
     if not rows:
         raise NseArchiveError(f"{kind} deals file is empty")
     header = tuple(c.strip() for c in rows[0])
@@ -435,7 +470,7 @@ _BIGINT_MAX = 2**63 - 1
 
 def parse_market_cap(text: str, d: date, names: Mapping[str, str]) -> Parsed[MarketCapRow]:
     """Keep NSE's reported market cap and issue size for universe share series."""
-    reader = csv.reader(io.StringIO(text))
+    reader = _csv_rows(text)
     fields = [value.strip() for value in next(reader, [])]
     if any(fields.count(field) != 1 for field in _MCAP_FIELDS):
         raise NseArchiveError("market-cap CSV has an unexpected header")

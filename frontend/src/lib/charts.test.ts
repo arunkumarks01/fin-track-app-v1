@@ -99,19 +99,20 @@ describe("FinTrackFeed", () => {
     await feed.getBars({
       symbol: "RELIANCE",
       exchange: "NSE",
-      interval: "D",
+      interval: "1d",
       countBack: 999999,
       variant: { adjustment: "raw" },
     });
     const q = new URL(seen[0] ?? "", "http://x").searchParams;
-    expect([q.get("count"), q.get("adjustment")]).toEqual(["5000", "raw"]);
+    expect([q.get("interval"), q.get("count"), q.get("adjustment")]).toEqual(["D", "5000", "raw"]);
   });
 
   it("declares as-traded only where FinTrack has it", async () => {
     const feed = new FinTrackFeed(fakeFetch({ "/api/data/symbols": SYMBOLS }));
     const q = (symbol: string, interval: string) =>
       feed.dataVariants({ symbol, exchange: "NSE", interval });
-    expect(await q("RELIANCE", "D")).toEqual({ adjustments: ["adjusted", "raw"] });
+    expect(await q("RELIANCE", "1d")).toEqual({ adjustments: ["adjusted", "raw"] });
+    expect(await q("RELIANCE", "1w")).toEqual({ adjustments: ["adjusted", "raw"] });
     expect(await q("RELIANCE", "1m")).toEqual({ adjustments: ["adjusted", "raw"] });
     expect(await q("RELIANCE", "5m")).toEqual({}); // derived: no as-traded series
     expect(await q("NIFTY 50", "D")).toEqual({}); // indices: one series

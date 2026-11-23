@@ -13,6 +13,10 @@ export function formatPct(n: number, digits = 1): string {
   return `${n.toFixed(digits)}%`;
 }
 
+export function formatDecimal(value: number, maximumFractionDigits = 2): string {
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits }).format(value);
+}
+
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));
   const m = Math.floor(total / 60);

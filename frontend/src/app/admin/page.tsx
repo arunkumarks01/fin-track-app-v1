@@ -5,9 +5,11 @@ import { HealthPanel } from "../health-panel";
 import { IngestPanel } from "../ingest-panel";
 import { AdjustmentsPanel } from "./adjustments-panel";
 import { IntradayPanel } from "./intraday-panel";
+import { FoPanel } from "./fo-panel";
 import { JobsPanel, QualityPanel } from "./jobs-panel";
 import { KitePanel } from "./kite-panel";
 import { ReferencePanel } from "./reference-panel";
+import { TicksPanel } from "./ticks-panel";
 
 export const metadata: Metadata = { title: "Admin · FinTrack v2" };
 
@@ -23,14 +25,14 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** UX_DESIGN "Admin/Health", Phase-1 subset: read-only monitoring of the data pipeline. */
+/** Admin/Health monitors and controls the data pipeline. */
 export default function AdminPage() {
   return (
     <div className="flex w-full flex-col gap-6 p-4 sm:p-6">
       <div>
         <h1 className="text-2xl font-semibold">Admin · Health</h1>
         <p className="text-muted-foreground">
-          Read-only. Jobs are started from the API with the bearer token, never from the browser.
+          Monitor ingestion, schedules and data quality. Job controls require the Admin API token.
         </p>
       </div>
       <div className="grid gap-6 md:grid-cols-2">
@@ -57,6 +59,12 @@ export default function AdminPage() {
       </Section>
       <Section title="Reference data">
         <ReferencePanel />
+      </Section>
+      <Section title="Futures & options history (slice 1f)">
+        <FoPanel />
+      </Section>
+      <Section title="Live ticks and option chains (slice 1d)">
+        <TicksPanel />
       </Section>
       <Section title="Data quality">
         <QualityPanel />

@@ -40,9 +40,15 @@ function str(v: unknown, what: string): string {
 }
 
 /** The intervals FinTrack serves, in the widget's codes. */
-export const INTERVALS = ["1m", "3m", "5m", "15m", "30m", "1h", "D", "W"] as const;
+export const INTERVALS = ["1m", "3m", "5m", "15m", "30m", "1h", "1d", "1w"] as const;
 /** Intervals with as-traded prices (NSE official daily/weekly, measured 1-minute). */
 export const RAW_INTERVALS: readonly string[] = ["1m", "D", "W"];
+
+export function apiChartInterval(interval: string): string {
+  if (interval === "1d") return "D";
+  if (interval === "1w") return "W";
+  return interval;
+}
 
 export type ChartSymbol = { symbol: string; exchange: string; tradingsymbol: string; kind: string };
 
@@ -68,6 +74,12 @@ export type CandlePage = {
   source: string;
   omittedUnusable: number;
 };
+
+export async function fetchSymbols(): Promise<ChartSymbol[]> {
+  const res = await fetch("/api/data/symbols", { cache: "no-store" });
+  if (!res.ok) throw new Error(`symbols request failed: HTTP ${res.status}`);
+  return parseSymbols(await res.json());
+}
 
 export function parseCandles(body: unknown): CandlePage {
   if (!isRecord(body) || !Array.isArray(body.bars)) fail("candles");
@@ -131,7 +143,7 @@ export class FinTrackFeed implements DataFeed {
   private async page(req: BarsRequest, before?: number): Promise<CandlePage> {
     const params = new URLSearchParams({
       symbol: `${req.exchange}:${req.symbol}`,
-      interval: req.interval,
+      interval: apiChartInterval(req.interval),
       adjustment: req.variant?.adjustment ?? "adjusted",
       count: String(Math.min(Math.max(req.countBack ?? 1000, 1), this.maxBars)),
     });
@@ -171,7 +183,8 @@ export class FinTrackFeed implements DataFeed {
       (s) => s.tradingsymbol === query.symbol && s.exchange === query.exchange,
     );
     // indices are never adjusted (one series); derived intraday has no as-traded series
-    if (!sym || sym.kind === "index" || !RAW_INTERVALS.includes(query.interval)) return {};
+    if (!sym || sym.kind === "index" || !RAW_INTERVALS.includes(apiChartInterval(query.interval)))
+      return {};
     return { adjustments: ["adjusted", "raw"] };
   }
 
