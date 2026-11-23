@@ -153,3 +153,38 @@ async def test_cancelled_login(db: Any, test_dsn: str, clock: FrozenClock) -> No
         assert r.status_code == 400
         assert "cancelled" in r.text
     assert fake.requests == []
+
+
+@pytest.mark.parametrize(
+    ("hour", "minute", "paused", "expected"),
+    [(9, 16, False, True), (8, 30, False, False), (16, 1, False, False), (9, 16, True, False)],
+)
+async def test_login_only_restarts_capture_during_enabled_window(
+    db: Any,
+    test_dsn: str,
+    monkeypatch: pytest.MonkeyPatch,
+    hour: int,
+    minute: int,
+    paused: bool,
+    expected: bool,
+) -> None:
+    fake = FakeKiteHTTP()
+    fake.on("POST", "/session/token", TOKEN_OK)
+    clock = FrozenClock(datetime(2026, 11, 19, hour, minute, tzinfo=IST))
+    async with running(_settings(test_dsn), clock, fake) as (app, client):
+        started: list[str] = []
+
+        def record(name: str, work: Any) -> bool:
+            started.append(name)
+            return True
+
+        monkeypatch.setattr(app.state.ingest, "start_service", record)
+        if paused:
+            app.state.scheduler.pause_job("ticks_capture")
+        state = await _state(client)
+        response = await client.get(
+            "/api/kite/callback",
+            params={"request_token": "request", "status": "success", "state": state},
+        )
+        assert response.status_code == 200
+        assert started == (["ticks_capture"] if expected else [])

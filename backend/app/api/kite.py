@@ -101,6 +101,20 @@ async def callback(
         log.warning("kite login failed: %s", exc)
         return _page("Login failed", "Kite rejected the token exchange. Try again.", False, 502)
     await _sessions(request).save(session)
+    # A login can happen after the morning capture job has already failed for lack
+    # of a session. Start the remaining capture window without overriding a paused job.
+    now = request.app.state.clock.now()
+    start, end = request.app.state.capture.window(now)
+    job = request.app.state.scheduler.get_job("ticks_capture")
+    if (
+        now.astimezone(MARKET_TZ).weekday() < 5
+        and start <= now < end
+        and job is not None
+        and job.next_run_time is not None
+    ):
+        service = request.app.state.job_services.get("ticks_capture")
+        if service is not None:
+            request.app.state.ingest.start_service("ticks_capture", service)
     expires = session.expires_at.astimezone(MARKET_TZ).strftime("%d %b %H:%M IST")
     return _page("Kite connected", f"Logged in as {session.user_id}. Expires {expires}.", True, 200)
 

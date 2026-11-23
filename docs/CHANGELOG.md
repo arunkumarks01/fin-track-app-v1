@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — Kite login capture recovery
+
+- A successful Kite login during the configured weekday capture window starts the capture
+  service when its schedule is enabled, including when the scheduled start was missed.
+  The existing service guard prevents duplicate runs, and a paused schedule stays paused.
+  Mock-broker integration tests cover the active, outside-window and paused cases. Live
+  market capture, exchange holiday behavior and a full-session probe remain unverified.
+
 ## [Unreleased] — Tick export integrity work
 
 - File promotion now flushes the completed Parquet file and containing directory before the
