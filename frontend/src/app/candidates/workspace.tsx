@@ -412,7 +412,22 @@ function DataNotes({ report }: { report: CandidateReport }) {
           {report.news.message}
           {report.news.material && " · Material event flagged"}
         </p>
-        {report.news.sources.length > 0 && <ul className="list-inside list-disc">{report.news.sources.map((source) => <li key={source.link}><a href={source.link} target="_blank" rel="noopener noreferrer" className="underline">{source.title}</a></li>)}</ul>}
+        {report.news.sources.length > 0 && (
+          <ul className="list-inside list-disc">
+            {report.news.sources.map((source) => (
+              <li key={source.link}>
+                <a
+                  href={source.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  {source.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
         {report.fundamentals && (
           <p>
             NSE market cap · {display(report.fundamentals.marketCap, "market_cap_paisa")} ·{" "}

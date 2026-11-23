@@ -106,13 +106,17 @@ export function parseCandidates(body: unknown) {
       status: choice(news.status, ["classified", "unknown"] as const),
       message: news.status === "classified" ? text(news.sentiment) : text(news.reason),
       material: news.material_event === true,
-      sources: news.status === "classified" ? list(news.sources).map((value) => {
-        const item = record(value);
-        const link = text(item.link);
-        const url = new URL(link);
-        if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Invalid news link");
-        return { title: text(item.title), link };
-      }) : [],
+      sources:
+        news.status === "classified"
+          ? list(news.sources).map((value) => {
+              const item = record(value);
+              const link = text(item.link);
+              const url = new URL(link);
+              if (url.protocol !== "https:" && url.protocol !== "http:")
+                throw new Error("Invalid news link");
+              return { title: text(item.title), link };
+            })
+          : [],
     },
     fundamentals: fundamentals && {
       marketCap: number(fundamentals.market_cap_paisa),

@@ -117,6 +117,7 @@ def create_app(
             app.state.http = http
             app.state.kite_sessions = sessions
             app.state.ingest = ingest
+            app.state.job_services = {}
             app.state.started_at = clk.now()
             log.info("FinTrack v2 %s started (env=%s, PAPER_MODE=true)", __version__, cfg.app_env)
             yield
