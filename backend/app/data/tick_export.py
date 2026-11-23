@@ -195,6 +195,88 @@ def _table(rows: list[Any]) -> pa.Table:
     )
 
 
+async def _locked_checksums(
+    conn: Any, start: datetime, end: datetime, batch_rows: int
+) -> dict[str, int]:
+    """Re-read every tick while the caller holds the write-blocking table lock."""
+    aggregate = dict(await conn.fetchrow(_AGG_SQL, start, end))
+    aggregate["full_hash"] = 0
+    rows: list[Any] = []
+    async for record in conn.cursor(
+        f"SELECT {_SELECT} FROM app.ticks WHERE ts >= $1 AND ts < $2 "  # noqa: S608
+        "ORDER BY sid, ts",
+        start,
+        end,
+        prefetch=batch_rows,
+    ):
+        rows.append(record)
+        if len(rows) >= batch_rows:
+            aggregate["full_hash"] = (
+                aggregate["full_hash"] + await asyncio.to_thread(_full_hash, _table(rows))
+            ) % (1 << 256)
+            rows = []
+    if rows:
+        aggregate["full_hash"] = (
+            aggregate["full_hash"] + await asyncio.to_thread(_full_hash, _table(rows))
+        ) % (1 << 256)
+    return {key: int(value) for key, value in aggregate.items()}
+
+
+async def _retire_verified_chunk(
+    conn: Any, start: datetime, end: datetime, now: datetime, batch_rows: int
+) -> None:
+    """Experimental atomic retirement; not scheduled or exposed through the application."""
+    async with conn.transaction():
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+            f"fintrack:tick-export:{start.isoformat()}",
+        )
+        # A writer already running commits before this lock; later writers wait until
+        # the dropped marker commits and are rejected by migration 0021's trigger.
+        await conn.execute("LOCK TABLE app.ticks IN SHARE ROW EXCLUSIVE MODE")
+        record = await conn.fetchrow(
+            """SELECT status, chunk_end, dropped_at, path, sha256 FROM app.tick_exports
+               WHERE chunk_start=$1 FOR UPDATE""",
+            start,
+        )
+        if (
+            record is None
+            or record["status"] != "verified"
+            or record["chunk_end"] != end
+            or record["dropped_at"] is not None
+            or not record["path"]
+            or not record["sha256"]
+        ):
+            raise ExportMismatchError("no matching verified, retained archive")
+        count = await conn.fetchval(
+            """SELECT count(*) FROM timescaledb_information.chunks
+               WHERE hypertable_schema='app' AND hypertable_name='ticks'
+                 AND range_start=$1 AND range_end=$2""",
+            start,
+            end,
+        )
+        if count != 1:
+            raise ExportMismatchError("tick range does not identify exactly one chunk")
+        path = Path(record["path"])
+        if await asyncio.to_thread(_sha256, path) != record["sha256"]:
+            raise ExportMismatchError("archive file checksum changed")
+        file_agg = await asyncio.to_thread(checksums_from_parquet, path)
+        db_agg = await _locked_checksums(conn, start, end, batch_rows)
+        if db_agg["rows"] == 0 or db_agg != file_agg:
+            raise ExportMismatchError("archive differs from locked database snapshot")
+        await conn.execute(
+            "UPDATE app.tick_exports SET dropped_at=$2 WHERE chunk_start=$1", start, now
+        )
+        dropped = await conn.fetch(
+            "SELECT drop_chunks('app.ticks'::regclass, older_than => $2::timestamptz, "
+            "newer_than => $1::timestamptz - interval '1 microsecond')",
+            start,
+            end,
+        )
+        if len(dropped) != 1:
+            raise ExportMismatchError("chunk removal did not return exactly one chunk")
+
+
 async def _ledger(
     conn: Any, start: datetime, end: datetime, status: str, now: datetime, **kw: Any
 ) -> None:

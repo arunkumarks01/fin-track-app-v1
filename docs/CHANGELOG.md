@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased] — Experimental tick retirement transaction
+
+- Added an unscheduled, internal retirement operation. It serializes against other exporters,
+  blocks tick writers, rechecks the file SHA-256 and every record against the locked database
+  snapshot, marks the range dropped, and removes exactly one chunk in the same transaction.
+  The archived-range trigger rejects writers released after commit.
+- Dedicated test-database tests cover successful retirement, late changes and concurrent
+  writers, corrupt files and rollback on a simulated drop failure. Automatic retention is
+  still disabled: full crash/restart recovery, production-sized lock-duration and capture
+  throughput need evidence before this operation is connected to scheduled cleanup.
+
 ## [Unreleased] — Late tick guard
 
 - Added migration 0021 to reject inserts or timestamp updates into ranges already marked

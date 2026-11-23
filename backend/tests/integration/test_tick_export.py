@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -195,3 +196,104 @@ async def test_previously_dropped_range_is_not_silently_overwritten(
     assert "manual review required" in again.details[0]
     assert archive.read_bytes() == original
     assert await db.fetchval("SELECT count(*) FROM app.ticks") == 251
+
+
+async def test_experimental_retirement_verifies_and_rejects_later_writes(
+    pool: Any, db: Any, test_dsn: str, tmp_path: Path
+) -> None:
+    await _seed(db)
+    result = await export_ready_chunks(pool, _settings(test_dsn, tmp_path), FrozenClock(NOW))
+    assert result.verified == 1
+    record = await db.fetchrow("SELECT chunk_start,chunk_end FROM app.tick_exports")
+    await tick_export._retire_verified_chunk(db, *record, NOW, 1000)
+    assert await db.fetchval("SELECT count(*) FROM app.ticks") == 1
+    assert await db.fetchval("SELECT dropped_at FROM app.tick_exports") == NOW
+    with pytest.raises(asyncpg.CheckViolationError, match="archived and dropped range"):
+        await db.execute("INSERT INTO app.ticks(ts,sid,ltp) VALUES($1,1,1)", OLD)
+
+
+async def test_experimental_retirement_keeps_chunk_if_late_tick_changes_snapshot(
+    pool: Any, db: Any, test_dsn: str, tmp_path: Path
+) -> None:
+    await _seed(db)
+    await export_ready_chunks(pool, _settings(test_dsn, tmp_path), FrozenClock(NOW))
+    record = await db.fetchrow("SELECT chunk_start,chunk_end FROM app.tick_exports")
+    await db.execute("INSERT INTO app.ticks(ts,sid,ltp) VALUES($1,1,1)", OLD)
+    with pytest.raises(tick_export.ExportMismatchError, match="locked database snapshot"):
+        await tick_export._retire_verified_chunk(db, *record, NOW, 1000)
+    assert await db.fetchval("SELECT count(*) FROM app.ticks") == 252
+    assert await db.fetchval("SELECT dropped_at FROM app.tick_exports") is None
+
+
+async def test_experimental_retirement_rolls_back_marker_on_drop_failure(
+    pool: Any, db: Any, test_dsn: str, tmp_path: Path
+) -> None:
+    await _seed(db)
+    await export_ready_chunks(pool, _settings(test_dsn, tmp_path), FrozenClock(NOW))
+    record = await db.fetchrow("SELECT chunk_start,chunk_end FROM app.tick_exports")
+
+    class FailDrop:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(db, name)
+
+        async def fetch(self, query: str, *args: Any) -> Any:
+            if "drop_chunks" in query:
+                raise RuntimeError("simulated drop failure")
+            return await db.fetch(query, *args)
+
+    with pytest.raises(RuntimeError, match="simulated drop failure"):
+        await tick_export._retire_verified_chunk(FailDrop(), *record, NOW, 1000)
+    assert await db.fetchval("SELECT count(*) FROM app.ticks") == 251
+    assert await db.fetchval("SELECT dropped_at FROM app.tick_exports") is None
+
+
+async def test_experimental_retirement_keeps_chunk_when_archive_changes(
+    pool: Any, db: Any, test_dsn: str, tmp_path: Path
+) -> None:
+    await _seed(db)
+    await export_ready_chunks(pool, _settings(test_dsn, tmp_path), FrozenClock(NOW))
+    record = await db.fetchrow("SELECT chunk_start,chunk_end,path FROM app.tick_exports")
+    await asyncio.to_thread(Path(record["path"]).write_bytes, b"corrupted")
+    with pytest.raises(tick_export.ExportMismatchError, match="archive file checksum changed"):
+        await tick_export._retire_verified_chunk(
+            db, record["chunk_start"], record["chunk_end"], NOW, 1000
+        )
+    assert await db.fetchval("SELECT count(*) FROM app.ticks") == 251
+    assert await db.fetchval("SELECT dropped_at FROM app.tick_exports") is None
+
+
+async def test_retirement_blocks_concurrent_late_writer_until_marker_commits(
+    pool: Any, db: Any, test_dsn: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _seed(db)
+    await export_ready_chunks(pool, _settings(test_dsn, tmp_path), FrozenClock(NOW))
+    record = await db.fetchrow("SELECT chunk_start,chunk_end FROM app.tick_exports")
+    locked = asyncio.Event()
+    release = asyncio.Event()
+    real = tick_export._locked_checksums
+
+    async def hold_lock(*args: Any) -> dict[str, int]:
+        locked.set()
+        await release.wait()
+        return await real(*args)
+
+    monkeypatch.setattr(tick_export, "_locked_checksums", hold_lock)
+    writer = await asyncpg.connect(test_dsn)
+    retirement = asyncio.create_task(tick_export._retire_verified_chunk(db, *record, NOW, 1000))
+    try:
+        await asyncio.wait_for(locked.wait(), timeout=5)
+        late = asyncio.create_task(
+            writer.execute("INSERT INTO app.ticks(ts,sid,ltp) VALUES($1,1,1)", OLD)
+        )
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(asyncio.shield(late), timeout=0.2)
+        release.set()
+        await retirement
+        with pytest.raises(asyncpg.CheckViolationError, match="archived and dropped range"):
+            await late
+        assert await db.fetchval("SELECT count(*) FROM app.ticks") == 1
+    finally:
+        release.set()
+        if not retirement.done():
+            await retirement
+        await writer.close()
