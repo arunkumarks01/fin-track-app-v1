@@ -387,7 +387,11 @@ async def get_fo(request: Request) -> JSONResponse:
 @router.get("/ticks")
 async def get_ticks(request: Request) -> JSONResponse:
     """Slice 1d status: live capture, recent runs, Parquet export ledger, chain snapshots."""
-    cap = getattr(request.app.state, "capture", None)
+    cap = (
+        getattr(request.app.state, "capture", None)
+        if request.app.state.settings.kite_configured
+        else None
+    )
     async with request.app.state.pool.acquire() as conn:
         return JSONResponse(
             await ticks_status(conn, cap.stats.to_dict() if cap is not None else None)

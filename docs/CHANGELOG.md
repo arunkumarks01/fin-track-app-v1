@@ -20,6 +20,7 @@
 
 - Connected tick capture, option-chain and scanner jobs to application services, with
   schedules for configured Kite and enabled scanners. Corrected default weekday crons.
+- Tick status reports capture as unavailable when Kite credentials are not configured.
 - Capture now reports buffered, dropped or interrupted rows as a failed run. Restored the
   native CI workflow and added scheduling and test-database integration checks.
 - Automatic tick cleanup remains suspended: full-field export verification and concurrent
