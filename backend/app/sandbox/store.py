@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, time, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.core.config import Settings
 from app.core.tradingdate import MARKET_TZ, canonical_daily_ts
@@ -14,6 +14,7 @@ from app.risk.correlation import portfolio_correlation
 from app.risk.parameters import PaperMode, RiskParameters
 from app.risk.plans import BPS
 from app.risk.sizing import Portfolio, Sizing, checks
+from app.sandbox.exits import detect_exit, exit_instruction
 from app.sandbox.model import Bar, Instruction, fees, match, sold_cost
 from app.sandbox.parameters import PaperParameters
 
@@ -379,7 +380,11 @@ async def advance(
         remaining = {symbol: bar.volume * model.volume_bps // BPS for symbol, bar in bars.items()}
         cash, realized = account["cash_paisa"], account["realized_paisa"]
         start_equity = cash + sum(p["quantity"] * p["mark_paisa"] for p in holdings.values())
-        fills = day_trades = 0
+        exit_fills, cash, realized = await _automatic_exits(
+            conn, account, holdings, bars, day, cash, realized, model
+        )
+        fills = exit_fills
+        day_trades = 0
         for order in orders:
             instruction = Instruction.model_validate_json(order["instruction"])
             symbol = instruction.symbol
@@ -538,6 +543,103 @@ async def advance(
             account_id,
         )
         return {"trade_day": day.isoformat(), "fills": fills}
+
+
+async def _automatic_exits(
+    conn: Any,
+    account: Any,
+    holdings: dict[str, dict[str, Any]],
+    bars: dict[str, Bar],
+    day: date,
+    cash: int,
+    realized: int,
+    model: PaperParameters,
+) -> tuple[int, int, int]:
+    """Execute protective exits only after the entry session has completed.
+
+    Realistic accounts permit one open buy position per symbol, so a protected entry
+    has an unambiguous quantity. Learning accounts deliberately keep exits manual.
+    """
+    if account["paper_mode"] != "realistic":
+        return 0, cash, realized
+    entries = await conn.fetch(
+        """SELECT o.* FROM app.paper_orders o
+           WHERE o.account_id=$1 AND o.side='buy' AND o.filled > 0
+             AND o.exit_order_id IS NULL AND o.exit_reason IS NULL
+             AND EXISTS (SELECT 1 FROM app.paper_fills f
+                         WHERE f.order_id=o.id AND f.trade_day < $2)
+           ORDER BY o.id FOR UPDATE""",
+        account["id"],
+        day,
+    )
+    fills = 0
+    at = datetime.combine(day, time(15, 30), MARKET_TZ)
+    for entry in entries:
+        position = holdings.get(entry["symbol"])
+        if position is None or position["quantity"] < entry["filled"]:
+            await conn.execute(
+                "UPDATE app.paper_orders SET exit_reason='manual' WHERE id=$1", entry["id"]
+            )
+            continue
+        instruction = Instruction.model_validate_json(entry["instruction"])
+        bar = bars.get(entry["symbol"])
+        if bar is None:
+            continue
+        trigger = detect_exit(instruction, bar, int(entry["filled"]))
+        if trigger is None:
+            continue
+        exit_order = exit_instruction(instruction, trigger, int(entry["filled"]))
+        slip = (trigger.price * model.slippage_bps + BPS - 1) // BPS
+        price = max(bar.low, trigger.price - slip)
+        quantity = int(entry["filled"])
+        notional = price * quantity
+        breakdown = fees(notional, "sell", model)
+        total = sum(breakdown.values())
+        allocated = sold_cost(position["cost_paisa"], position["quantity"], quantity)
+        outcome = notional - total - allocated
+        order = await conn.fetchrow(
+            """INSERT INTO app.paper_orders
+               (account_id,request_id,symbol,side,kind,status,quantity,filled,instruction,created_at,detail)
+               VALUES($1,$2,$3,'sell','market','filled',$4,$4,$5::jsonb,$6,$7)
+               RETURNING id""",
+            account["id"],
+            uuid4(),
+            entry["symbol"],
+            quantity,
+            exit_order.model_dump_json(),
+            at,
+            f"Automatic {trigger.reason} at {trigger.price} paisa",
+        )
+        await conn.execute(
+            """INSERT INTO app.paper_fills
+               (order_id,trade_day,quantity,price_paisa,fees_paisa,fee_breakdown,realized_paisa)
+               VALUES($1,$2,$3,$4,$5,$6::jsonb,$7)""",
+            order["id"],
+            day,
+            quantity,
+            price,
+            total,
+            json.dumps(breakdown),
+            outcome,
+        )
+        left = position["quantity"] - quantity
+        if left:
+            position["quantity"] = left
+            position["cost_paisa"] -= allocated
+        else:
+            holdings.pop(entry["symbol"])
+        cash += notional - total
+        realized += outcome
+        fills += 1
+        await conn.execute(
+            """UPDATE app.paper_orders SET exit_order_id=$1,exit_reason=$2,exit_triggered_at=$3
+               WHERE id=$4""",
+            order["id"],
+            trigger.reason,
+            at,
+            entry["id"],
+        )
+    return fills, cash, realized
 
 
 async def _update_order(

@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased] — Realistic paper stop exits
+
+- Realistic-mode paper entries with a stop and target now receive an automatic protective
+  exit only from the following finalized session. The exit uses the bar's gap-aware trigger
+  price, adverse configured slippage and the normal fee stack, then persists its fill,
+  P&L and link to the protected entry. Learning-mode exits remain manual.
+- Replaced the skipped automatic-exit placeholder with a dedicated test-database replay
+  fixture. It proves no same-day look-ahead, the next-session stop exit, persisted linkage,
+  slippage and filled ledger record. The remaining Phase 5 work is trailing stops,
+  derivatives, approval flows and live-input acceptance.
+
 ## [Unreleased] — Persisted paper replay marks
 
 - A completed replay session now saves each held position's dated close mark, MTM and a
