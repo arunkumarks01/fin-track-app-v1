@@ -29,12 +29,11 @@ use only the dedicated `_test` database; broker and Telegram calls must be mocke
    Define explicit account selection and load the correct cash, positions, exposure and
    loss state consistently. Apply guardrails to plans and paper submissions, including
    concurrency, lot sizes and unknown/stale inputs. Add database integration tests.
-5. **Paper execution.** Complete and test existing-order exits, partial fills, stop/target
-   prices, trailing stops without look-ahead, marks and P&L, fees, derivatives, square-off,
-   approval and restart/idempotency flows. The integration helper references a column not
-   present in migration 0017; add a new migration if a schema change is required. Replace
-   the skipped placeholder integration tests with executable tests against `_test`; mock
-   all external messaging. Verify guardrails, kill switch and hand-computed P&L.
+5. **Paper execution.** Existing equity orders have verified stop/target exits, conservative
+   trailing stops without look-ahead, dated marks and P&L. Complete and test partial fills,
+   derivatives, square-off, approval and restart/idempotency flows. Replace any remaining
+   placeholders with executable tests against `_test`; mock all external messaging. Verify
+   guardrails, kill switch and a hand-computed P&L example.
 6. **Verification and documentation.** Run backend lint, formatting, mypy and full
    unit/integration suite on the test database, plus frontend lint, format, typecheck,
    tests and build. The restored CI workflow still requires an actual GitHub run. Update
