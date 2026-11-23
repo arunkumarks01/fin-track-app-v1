@@ -8,6 +8,8 @@
   checks. This is not yet a complete strategy backtester or Phase 6 gate.
 - Added a small Learn page explaining backtests, drawdown, win rate, slippage and
   overfitting, with a link to the clearly labelled fictional backtest example.
+- Added an explicit warning to the paper workspace that automatic stop and target exits
+  are not verified and must not be relied on to close positions.
 
 ## [Unreleased] — Backtest learning preview
 
