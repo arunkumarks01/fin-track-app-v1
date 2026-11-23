@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -498,21 +498,36 @@ async def advance(
             account_id,
             list(holdings),
         )
+        mark_at = datetime.combine(day, time(15, 30), MARKET_TZ)
         for symbol, pos in holdings.items():
             if symbol not in bars:
                 continue
+            mark = bars[symbol].close
+            mtm = mark * pos["quantity"] - pos["cost_paisa"]
             await conn.execute(
                 """INSERT INTO app.paper_positions
-                   (account_id,symbol,quantity,cost_paisa,mark_paisa,mark_day)
-                   VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (account_id,symbol)
+                   (account_id,symbol,quantity,cost_paisa,mark_paisa,mark_day,mark_updated_at,mtm_paisa)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (account_id,symbol)
                    DO UPDATE SET quantity=excluded.quantity,cost_paisa=excluded.cost_paisa,
-                         mark_paisa=excluded.mark_paisa,mark_day=excluded.mark_day""",
+                         mark_paisa=excluded.mark_paisa,mark_day=excluded.mark_day,
+                         mark_updated_at=excluded.mark_updated_at,mtm_paisa=excluded.mtm_paisa""",
                 account_id,
                 symbol,
                 pos["quantity"],
                 pos["cost_paisa"],
-                bars[symbol].close,
+                mark,
                 day,
+                mark_at,
+                mtm,
+            )
+            await conn.execute(
+                """INSERT INTO app.paper_marks(account_id,symbol,mark_paisa,marked_at)
+                   VALUES($1,$2,$3,$4) ON CONFLICT(account_id,symbol,marked_at)
+                   DO UPDATE SET mark_paisa=excluded.mark_paisa""",
+                account_id,
+                symbol,
+                mark,
+                mark_at,
             )
         await conn.execute(
             """UPDATE app.paper_accounts SET cursor_day=$1,cash_paisa=$2,realized_paisa=$3

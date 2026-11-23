@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased] — Persisted paper replay marks
+
+- A completed replay session now saves each held position's dated close mark, MTM and a
+  corresponding immutable mark ledger entry. It uses the historical session timestamp, so
+  replayed marks are never described as live prices. The paper API integration test verifies
+  the persisted mark, MTM and mark history.
+
 ## [Unreleased] — Account-aware candidate guardrails
 
 - Candidate plans can now take `paper_account_id`. They load that account's persisted risk

@@ -80,6 +80,10 @@ async def test_replay_auth_idempotency_controls_partial_fill_and_pnl(
         ).status_code == 409
         after_buy = (await client.get(path)).json()
         assert after_buy["positions"][0]["quantity"] == 20
+        assert after_buy["positions"][0]["mark_day"] == FIRST.isoformat()
+        assert after_buy["positions"][0]["mark_updated_at"] is not None
+        assert after_buy["positions"][0]["mtm_paisa"] == -308
+        assert await db.fetchval("SELECT count(*) FROM app.paper_marks") == 1
         assert after_buy["orders"][0]["status"] == "cancelled"
         assert after_buy["orders"][0]["filled"] == 20
         assert after_buy["fills"][0]["fees_paisa"] == 308
