@@ -14,6 +14,7 @@ from app.broker.kite.client import RateLimiter
 from app.core.tradingdate import MARKET_TZ, canonical_daily_ts
 from app.data.instruments import UniverseMember, sync_universe
 from app.data.nse_archive import NseArchiveClient
+from app.data.participant_review import retain_participant_source
 from app.data.reference_load import run_reference_load, store_participants
 from app.db.migrate import migrate
 from app.main import create_app
@@ -30,6 +31,30 @@ D19 = date(2026, 11, 19)
 D20 = date(2026, 11, 20)
 DAYS = [OLD, D19, D20]
 STEP1 = ["mto", "participant_oi", "participant_vol"]
+
+
+async def test_review_preserves_exact_source_and_distinct_revisions(db: Any) -> None:
+    import hashlib
+
+    await migrate(db)
+    day = date(2018, 6, 27)
+    source = b'Client,"602745.3333"\r\n'
+    url = "https://nsearchives.nseindia.com/content/nsccl/example.csv"
+    await retain_participant_source(db, "participant_oi", day, url, source, "fractional", NOW)
+    await retain_participant_source(db, "participant_oi", day, url, source, "fractional", NOW)
+    await retain_participant_source(db, "participant_oi", day, url, source + b"\n", "changed", NOW)
+    rows = await db.fetch(
+        "SELECT source_bytes,source_sha256 FROM app.participant_source_review "
+        "WHERE dataset=$1 AND trade_date=$2",
+        "participant_oi",
+        day,
+    )
+    assert len(rows) == 2
+    assert {bytes(r["source_bytes"]) for r in rows} == {source, source + b"\n"}
+    assert {r["source_sha256"] for r in rows} == {
+        hashlib.sha256(source).hexdigest(),
+        hashlib.sha256(source + b"\n").hexdigest(),
+    }
 
 
 async def test_grouped_whole_participant_values_are_stored_exactly(db: Any) -> None:
@@ -219,6 +244,12 @@ async def test_loads_three_datasets_resumably_with_gaps_and_refusals_recorded(
         assert ledger[("participant_vol", D19)] == ("missing", "404 from the archive")
         assert ledger[("participant_oi", OLD)][0] == "error"
         assert "nse_total_gap_contracts" in (ledger[("participant_oi", D20)][1] or "")
+        assert await db.fetchval(
+            "SELECT source_bytes FROM app.participant_source_review "
+            "WHERE dataset=$1 AND trade_date=$2",
+            "participant_oi",
+            OLD,
+        ) == bad_total.encode()
 
         delivery = await db.fetch(
             "SELECT symbol, trade_date, deliv_bps, source_symbol FROM app.delivery_daily "

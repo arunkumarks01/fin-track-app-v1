@@ -52,6 +52,7 @@ from app.data.nse_reference import (
     participant_url,
     read_pr_members,
 )
+from app.data.participant_review import retain_participant_source
 
 log = logging.getLogger(__name__)
 
@@ -522,10 +523,18 @@ async def run_reference_load(
                             report.rounding_days += 1 if gap else 0
                     except NseArchiveMislabeled as exc:  # no correct file for the day: a gap
                         report.missing += 1
+                        if ds in PARTICIPANT_DATASETS:
+                            await retain_participant_source(
+                                conn, ds, d, url, blob, str(exc), clock.now()
+                            )
                         await _ledger(conn, ds, d, "missing", clock.now(), str(exc))
                         log.warning("reference %s %s: %s — recorded as a gap", ds, d, exc)
                     except NseArchiveError as exc:  # unreadable file: recorded, not fatal
                         report.errors += 1
+                        if ds in PARTICIPANT_DATASETS:
+                            await retain_participant_source(
+                                conn, ds, d, url, blob, str(exc), clock.now()
+                            )
                         await _ledger(conn, ds, d, "error", clock.now(), str(exc))
                     else:
                         report.ok += 1

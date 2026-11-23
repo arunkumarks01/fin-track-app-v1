@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — Backtest cadence
+
+- Recorded the user's direction to validate each strategy on historical data and then use
+  forward paper testing; historical backtests are not required every day.
+- Added a checksummed, version-preserving archive of NSE participant CSV files that fail
+  strict validation. The source and the failure ledger are saved atomically; retained
+  files remain excluded from clean participant data until their issues are resolved.
+
 ## [Unreleased] — NSE participant CSV exact counts
 
 - Accept quoted Indian- and western-grouped contract counts with an all-zero decimal

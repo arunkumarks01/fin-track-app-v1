@@ -123,6 +123,12 @@ segment analysis (strategy×beta×sector×time×regime), slippage calibration fr
 Calibration output feeds Phase 3 conviction + the explainer. *Gate:* parity green; backtest
 P&L == paper P&L same trade+costs; zero-edge fixture net-negative after costs.
 
+**Historical backtest cadence (user direction):** run a historical backtest for each strategy
+as part of its validation, then evaluate it through forward paper testing. A daily historical
+backtest is not required. Reruns are needed when the strategy, data, cost assumptions or
+validation method materially changes, or when a reviewer requests them; record the inputs
+and version for each run.
+
 **Phase 6 foundation in progress.** A deterministic single-symbol daily replay building
 block accepts validated as-traded fixture bars and next-session market/limit instructions.
 It shares the paper fill and fee model and has a test-database parity example. It is not
