@@ -49,8 +49,14 @@ need separate acceptance if enabled. No real broker orders are authorized by thi
 
 ## Phase 6 follow-on status
 
-The follow-on backtest foundation is present: versioned daily-long study specifications,
-verified historical daily-bar/NIFTY alignment, causal replay, performance metrics and a durable
-run ledger. It is not a runnable strategy service yet. Connect signals to next-session orders
-and protective/time exits, persist actual historical runs, then add the results API/UI before
-using outputs to select forward-paper candidates.
+The five daily-long strategies now have a runnable verified-history service and CLI, causal
+next-open entries, protective/time exits, conservative trailing-stop support, shared paper
+cost functions and persistent audited results. `/api/backtest` and `/backtest` expose actual
+run status/results. Existing v1 study specs keep trailing disabled. Entry-day protection and
+unclipped adverse market slippage are explicit study assumptions; full paper/scanner parity
+is not claimed. Missing sessions, insufficient warm-up and non-dividend corporate actions
+fail the run. Open positions remain marked, not forced closed. Dividend income is excluded.
+
+Next: execute and document same-input real-history comparisons, then expand to portfolio and
+walk-forward testing. Forward-paper candidates require adequate outcomes across more than a
+small selected symbol sample. Phase 6 completion and live-market acceptance remain unproven.

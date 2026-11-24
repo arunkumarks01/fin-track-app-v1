@@ -63,6 +63,9 @@ async def reset_schema(conn: Any) -> None:
 async def db(test_dsn: str) -> AsyncIterator[Any]:
     conn = await asyncpg.connect(test_dsn, server_settings={"timezone": "UTC"})
     try:
+        # Keep independent pytest invocations from resetting each other's shared _test schema.
+        # Session-scoped advisory lock lives on this connection through the entire fixture.
+        await conn.execute("SELECT pg_advisory_lock(hashtextextended('fintrack:test-schema', 0))")
         await reset_schema(conn)
         yield conn
     finally:

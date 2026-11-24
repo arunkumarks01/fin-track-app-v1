@@ -205,7 +205,9 @@ async def test_experimental_retirement_verifies_and_rejects_later_writes(
     result = await export_ready_chunks(pool, _settings(test_dsn, tmp_path), FrozenClock(NOW))
     assert result.verified == 1
     record = await db.fetchrow("SELECT chunk_start,chunk_end FROM app.tick_exports")
-    await tick_export._retire_verified_chunk(db, *record, NOW, 1000)
+    await tick_export._retire_verified_chunk(
+        db, record["chunk_start"], record["chunk_end"], NOW, 1000
+    )
     assert await db.fetchval("SELECT count(*) FROM app.ticks") == 1
     assert await db.fetchval("SELECT dropped_at FROM app.tick_exports") == NOW
     with pytest.raises(asyncpg.CheckViolationError, match="archived and dropped range"):
@@ -220,7 +222,9 @@ async def test_experimental_retirement_keeps_chunk_if_late_tick_changes_snapshot
     record = await db.fetchrow("SELECT chunk_start,chunk_end FROM app.tick_exports")
     await db.execute("INSERT INTO app.ticks(ts,sid,ltp) VALUES($1,1,1)", OLD)
     with pytest.raises(tick_export.ExportMismatchError, match="locked database snapshot"):
-        await tick_export._retire_verified_chunk(db, *record, NOW, 1000)
+        await tick_export._retire_verified_chunk(
+            db, record["chunk_start"], record["chunk_end"], NOW, 1000
+        )
     assert await db.fetchval("SELECT count(*) FROM app.ticks") == 252
     assert await db.fetchval("SELECT dropped_at FROM app.tick_exports") is None
 
@@ -242,7 +246,9 @@ async def test_experimental_retirement_rolls_back_marker_on_drop_failure(
             return await db.fetch(query, *args)
 
     with pytest.raises(RuntimeError, match="simulated drop failure"):
-        await tick_export._retire_verified_chunk(FailDrop(), *record, NOW, 1000)
+        await tick_export._retire_verified_chunk(
+            FailDrop(), record["chunk_start"], record["chunk_end"], NOW, 1000
+        )
     assert await db.fetchval("SELECT count(*) FROM app.ticks") == 251
     assert await db.fetchval("SELECT dropped_at FROM app.tick_exports") is None
 
@@ -279,7 +285,11 @@ async def test_retirement_blocks_concurrent_late_writer_until_marker_commits(
 
     monkeypatch.setattr(tick_export, "_locked_checksums", hold_lock)
     writer = await asyncpg.connect(test_dsn)
-    retirement = asyncio.create_task(tick_export._retire_verified_chunk(db, *record, NOW, 1000))
+    retirement = asyncio.create_task(
+        tick_export._retire_verified_chunk(
+            db, record["chunk_start"], record["chunk_end"], NOW, 1000
+        )
+    )
     try:
         await asyncio.wait_for(locked.wait(), timeout=5)
         late = asyncio.create_task(

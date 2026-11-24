@@ -1,1 +1,1 @@
-"""Deterministic backtest building blocks; not yet a complete backtest service."""
+"""Verified daily-long historical studies and causal replay primitives."""

@@ -34,8 +34,17 @@ def performance(replay: Replay, starting_capital_paisa: int) -> Performance:
     """
     if starting_capital_paisa <= 0:
         raise ValueError("Starting capital must be positive")
-    realised = [fill.realized_paisa for fill in replay.fills if fill.realized_paisa is not None]
-    outcomes = [value for value in realised if value is not None]
+    outcomes: list[int] = []
+    held, realized = 0, 0
+    for fill in replay.fills:
+        if fill.side == "buy":
+            held += fill.quantity
+        else:
+            held -= fill.quantity
+            realized += fill.realized_paisa or 0
+            if held == 0:
+                outcomes.append(realized)
+                realized = 0
     gross_profit = sum(value for value in outcomes if value > 0)
     gross_loss = -sum(value for value in outcomes if value < 0)
     ending = replay.equity_curve[-1]

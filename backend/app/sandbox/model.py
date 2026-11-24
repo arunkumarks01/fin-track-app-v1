@@ -86,8 +86,8 @@ def match(order: Instruction, bar: Bar, armed: bool, config: PaperParameters) ->
         return Match(min(bar.open, limit) if buy else max(bar.open, limit))
     else:
         base = bar.open
-    slip = (base * config.slippage_bps + BPS - 1) // BPS
-    return Match(min(bar.high, base + slip) if buy else max(bar.low, base - slip), arm=False)
+    price = adverse_price(base, order.side, config)
+    return Match(min(bar.high, price) if buy else max(bar.low, price), arm=False)
 
 
 def fees(notional: int, side: Side, config: PaperParameters) -> dict[str, int]:
@@ -112,3 +112,9 @@ def sold_cost(total_cost: int, held: int, sold: int) -> int:
     if not 0 < sold <= held or total_cost < 0:
         raise ValueError("Selling requires an adequate paper position")
     return total_cost * sold // held
+
+
+def adverse_price(base: int, side: Side, config: PaperParameters) -> int:
+    """Apply the paper model's integer adverse slippage to a known execution price."""
+    slip = (base * config.slippage_bps + BPS - 1) // BPS
+    return base + slip if side == "buy" else max(1, base - slip)

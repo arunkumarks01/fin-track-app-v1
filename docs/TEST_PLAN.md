@@ -39,11 +39,23 @@ in-memory cache fixture. These make every test deterministic.
 - **P5 sandbox:** kill-switch/pause blocks all order paths + survives restart; idempotency rejects duplicates; paper P&L == hand-computed cost example.
 - **P6 backtest:** **chronological** max-drawdown == hand value; **backtest↔live↔paper parity** green; zero-edge fixture net-negative after costs.
 
-Phase 6 foundation checks currently cover causal next-session replay, shared paper fees and
-cost basis, marked-equity performance metrics, immutable run-input/result persistence on the
-dedicated `_test` database, and materialised daily-long signal definitions. They do not yet
-close the P6 gate: strategy execution, stops/targets/trailing/time exits, real-history runs,
-portfolio replay, walk-forward and results API/UI remain required.
+Phase 6 execution checks cover next-open signals, entry-day stop-first double touches,
+gap stops, targets, conservative next-session trails, exact maximum-holding timing, partial
+exit liquidation, complete-trade metrics, final pending signals, adverse slippage and prefix
+invariance. A relative-strength crossover regression verifies previous-session context.
+`test_backtest_service.py` seeds verified archives, equity and NIFTY on `_test`, runs the real
+materialiser/engine for all five specs, verifies HTTP auth, ledger fills/equity/metrics and
+input hashes, and rejects missing sessions, corporate actions and result overwrites.
+A separate realistic-paper parity fixture checks the engine's protective gap exit, nonzero
+slippage, fees and allocated P&L. Entry-day eligibility and unclipped slippage differences are
+explicit; this example does not establish complete replay/live parity. Independent destructive
+test invocations serialize with a PostgreSQL advisory lock before resetting `_test`.
+Frontend checks distinguish failed/missing results from zero returns and reject unsafe money.
+2026-11-24 validation: 529 offline backend tests and 180 `_test` integration tests passed;
+Ruff, formatting and strict mypy passed. Frontend lint, format, types, 114 tests and production
+builds locally and on the VPS staging release passed.
+These checks do not close the P6 gate: real-history evidence, portfolio replay, walk-forward,
+full scanner/paper parity and live-market acceptance require separate evidence.
 - **P7 options:** payoff math validated; multi-leg fills + margin modeled.
 - **P8 frontend:** tsc clean; one formatter (no local ones); one sentiment value across all surfaces; no UI number contradicts the backend; a11y smoke.
 - **P9 ops:** restore-from-backup tested; dead-man's-switch fires on a stalled scheduler.

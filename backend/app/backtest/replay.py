@@ -34,6 +34,7 @@ class Fill:
     price_paisa: int
     fees_paisa: int
     realized_paisa: int | None
+    reason: str | None = None
 
 
 @dataclass(frozen=True)

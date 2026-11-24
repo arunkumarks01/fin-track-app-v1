@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -8,8 +9,8 @@ from app.data.tick_export import _full_hash, _table
 from app.data.ticks import COLUMNS
 
 
-def _row() -> dict:
-    row = dict.fromkeys(COLUMNS)
+def _row() -> dict[str, Any]:
+    row: dict[str, Any] = dict.fromkeys(COLUMNS)
     row.update(ts=datetime(2026, 1, 1, tzinfo=UTC), sid=1, ltp=123)
     return row
 

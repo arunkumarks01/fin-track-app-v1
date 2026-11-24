@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.admin import router as admin_router
 from app.api.analytics import router as analytics_router
+from app.api.backtest import router as backtest_router
 from app.api.data import router as data_router
 from app.api.health import router as health_router
 from app.api.kite import router as kite_router
@@ -88,6 +89,11 @@ def create_app(
             async with pool.acquire() as conn:
                 await migrate(conn)
                 await apply_storage_policies(conn, cfg)
+                await conn.execute(
+                    """UPDATE app.backtest_runs SET status='failed',
+                              detail='Process restarted before result commit; rerun required'
+                       WHERE status IN ('queued','running')"""
+                )
             sessions = SessionStore(pool, clk)
             restored = await sessions.load()
             log.info("kite session %s", "restored" if restored else "not available")
@@ -203,4 +209,5 @@ def create_app(
     app.include_router(analytics_router)
     app.include_router(scoring_router)
     app.include_router(paper_router)
+    app.include_router(backtest_router)
     return app

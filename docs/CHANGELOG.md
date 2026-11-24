@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — Runnable Phase 6 daily-long studies
+
+- Connected verified NSE/NIFTY inputs and all five materialised signals to a causal fixed-share
+  strategy engine. Added entry-day stop/target protection, next-session trails, time exits,
+  shared paper slippage/fees/cost basis, partial liquidation and complete-trade metrics.
+- Fixed the materialiser discarding previous relative strength, which suppressed crossovers.
+- Added migration 0023 for fill reasons and ending open-position state, without editing any
+  applied migration. Runs record exact assumptions and a data fingerprint; incomplete inputs
+  and unsupported corporate actions fail explicitly. Added study CLI, bearer-protected run
+  creation, read-only results APIs and an actual-results `/backtest` view.
+- Added causal unit fixtures and a real materialiser-to-HTTP ledger fixture on `_test`.
+  Corrected pre-existing type annotations in tick-export tests so strict checks can run.
+  A fixture advisory lock now serializes independent destructive `_test` invocations.
+- Validation: backend Ruff/format/mypy and 529 offline tests pass; the serial VPS `_test`
+  integration suite passes all 180 tests. Frontend lint/format/types, 114 tests, and production
+  builds locally and on the VPS staging release pass. Historical/deployment evidence follows
+  once observed. This is not Phase 6 completion or live-market acceptance.
+
 ## [Unreleased] — Phase 6 historical run ledger and inputs
 
 - Added migration 0022 for immutable backtest runs, fills, marked daily equity and performance

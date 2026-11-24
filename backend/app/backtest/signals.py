@@ -7,7 +7,9 @@ from dataclasses import dataclass
 
 from app.analytics.indicators import Bar, calculate
 from app.analytics.parameters import IndicatorPeriods
-from app.scoring.rules import BUILT_INS, Strategy, assess
+from app.scoring.rules import BUILT_INS, Context, Strategy, assess
+
+SIGNAL_THRESHOLDS = {"rsi_low": 30.0, "rsi_high": 70.0, "squeeze_width_pct": 10.0}
 
 FIRST_COHORT = frozenset(
     {
@@ -38,13 +40,12 @@ def materialise_daily_long_signals(
     curves = calculate(bars, periods)
     strategies = _cohort()
     output: list[Signal] = []
+    previous: Context = {}
     for i, bar in enumerate(bars):
         current = {name: values[i] for name, values in curves.items()}
         current.update(
             close_paisa=bar.close,
-            rsi_low=30.0,
-            rsi_high=70.0,
-            squeeze_width_pct=10.0,
+            **SIGNAL_THRESHOLDS,
         )
         if i >= periods.relative_strength and all(
             item.t in benchmark_closes for item in bars[i - periods.relative_strength : i + 1]
@@ -63,27 +64,8 @@ def materialise_daily_long_signals(
         current["bollinger_width_pct"] = (
             100 * (high - low) / mid if low is not None and high is not None and mid else None
         )
-        previous = {} if i == 0 else {name: values[i - 1] for name, values in curves.items()}
-        if i:
-            prior_bar = bars[i - 1]
-            previous.update(
-                close_paisa=prior_bar.close,
-                rsi_low=30.0,
-                rsi_high=70.0,
-                squeeze_width_pct=10.0,
-                relative_strength_pct=None,
-            )
-            prior_low, prior_mid, prior_high = (
-                previous["bollinger_lower_paisa"],
-                previous["bollinger_middle_paisa"],
-                previous["bollinger_upper_paisa"],
-            )
-            previous["bollinger_width_pct"] = (
-                100 * (prior_high - prior_low) / prior_mid
-                if prior_low is not None and prior_high is not None and prior_mid
-                else None
-            )
         for strategy in strategies:
             if assess(strategy, current, previous, shorts_enabled=False)["status"] == "matched":
                 output.append(Signal(strategy.id, strategy.revision, bar.t))
+        previous = current
     return tuple(output)

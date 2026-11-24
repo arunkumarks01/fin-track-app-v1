@@ -21,6 +21,8 @@ class DailyLongSpec:
     target_bps: int
     max_holding_sessions: int
     one_position_per_symbol: bool = True
+    # Explicit opt-in; existing v1 studies retain their original fixed-stop assumptions.
+    trailing_stop_bps: int = 0
 
 
 # A common, deliberately conservative baseline lets the first comparison isolate each

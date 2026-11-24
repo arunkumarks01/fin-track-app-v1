@@ -70,3 +70,82 @@ async def test_close_signal_backtest_matches_paper_ledger(db: Any) -> None:
     assert [(f.price_paisa, f.fees_paisa) for f in result.fills] == [
         (f["price_paisa"], f["fees_paisa"]) for f in reversed(paper["fills"])
     ]
+
+
+async def test_strategy_protective_exit_matches_realistic_paper_ledger(db: Any) -> None:
+    """Ordinary spread/volume fixture, including nonzero slippage on both fills."""
+    from app.analytics.indicators import Bar as DailyBar
+    from app.backtest.engine import run_daily_long
+    from app.backtest.signals import Signal
+    from app.backtest.strategies import daily_long_spec
+    from app.core.tradingdate import canonical_daily_ts
+
+    await migrate(db)
+    now = datetime(2026, 11, 21, 10, tzinfo=MARKET_TZ)
+    days = [date(2026, 11, 17), date(2026, 11, 18), date(2026, 11, 19)]
+    symbol = "NSE:AAA"
+    await sync_universe(db, [UniverseMember(symbol, 101, "equity")], now)
+    await db.executemany(
+        "INSERT INTO app.nse_archive_files(trade_date,status,fetched_at) VALUES($1,'ok',$2)",
+        [(day, now) for day in days],
+    )
+    bars = [
+        Bar(10000, 10100, 9900, 10000, 10000),
+        Bar(10000, 10200, 9800, 10100, 10000),
+        Bar(9000, 9300, 8900, 9100, 10000),
+    ]
+    await db.executemany(
+        """INSERT INTO app.nse_bhav
+           (symbol,trade_date,prev_close,open,high,low,close,volume)
+           VALUES($1,$2,10000,$3,$4,$5,$6,$7)""",
+        [
+            (symbol, day, b.open, b.high, b.low, b.close, b.volume)
+            for day, b in zip(days, bars, strict=True)
+        ],
+    )
+    cfg = PaperParameters(slippage_bps=5, volume_bps=10000)
+    settings = build_settings(paper=cfg)
+    account = await store.create(db, "strategy parity", days[0], "realistic", now, settings)
+    account_id = account["id"]
+    await store.advance(db, account_id, None, now, settings)
+    # Engine sets risk levels from its slipped 10005 entry, with integer floor/ceiling.
+    buy = Instruction(
+        symbol=symbol,
+        side="buy",
+        kind="market",
+        quantity=10,
+        risk_stop_paisa=9504,
+        risk_target_paisa=11006,
+    )
+    await store.submit(db, account_id, uuid4(), buy, now)
+    await store.advance(db, account_id, days[0], now, settings)
+    await store.advance(db, account_id, days[1], now, settings)
+    paper = await store.overview(db, account_id)
+    daily = [
+        DailyBar(
+            int(canonical_daily_ts(d, MARKET_TZ).timestamp()),
+            b.open,
+            b.high,
+            b.low,
+            b.close,
+            b.volume,
+        )
+        for d, b in zip(days, bars, strict=True)
+    ]
+    spec = daily_long_spec("year_breakout_long_v1")
+    result = run_daily_long(
+        daily,
+        [Signal(spec.strategy_id, 1, daily[0].t)],
+        spec,
+        symbol,
+        days[0],
+        account["capital_paisa"],
+        10,
+        cfg,
+    )
+    assert result.quantity == 0
+    assert result.cash_paisa == paper["account"]["cash_paisa"]
+    assert result.fills[-1].realized_paisa == paper["account"]["realized_paisa"]
+    assert [(f.price_paisa, f.fees_paisa) for f in result.fills] == [
+        (f["price_paisa"], f["fees_paisa"]) for f in reversed(paper["fills"])
+    ]

@@ -131,20 +131,24 @@ backtest is not required. Reruns are needed when the strategy, data, cost assump
 validation method materially changes, or when a reviewer requests them; record the inputs
 and version for each run.
 
-**Phase 6 foundation in progress.** A deterministic single-symbol daily replay building
-block accepts validated as-traded fixture bars and next-session market/limit instructions.
-It shares the paper fill and fee model, has a test-database parity example, and reports
-marked ending equity, realized win/loss counts, profit factor and chronological drawdown
-without calling an open position a completed trade. It is not yet a strategy backtester or
-an API: data coverage, portfolio replay, live-scanner parity, walk-forward evaluation and
-the full exit gate remain outstanding.
+**Phase 6 runnable daily-long slice.** Verified NSE as-traded bars and aligned NIFTY
+sessions now feed the five materialised strategies into a fixed-quantity single-symbol engine.
+A signal completed at a close can enter only at the following session open. Entry-day
+stop/target protection is active; ambiguous double touches choose the stop. Trails earned from
+a high become effective next session, and the time exit follows the configured number of
+completed holding sessions. Version-1 study specs retain their original fixed stops (trailing
+is implemented and tested but disabled by default). Shared paper fees, slippage rounding and
+cost basis apply; market slippage is deliberately not improved using a later high/low.
 
-**Phase 6 current implementation status.** Run inputs, fills, daily marked equity and metrics
-now persist in the Phase 6 ledger. The first cohort's signal materialiser uses the same daily
-indicator/rule definitions as scoring, and its loader reads stock prices only from NSE-verified
-bhavcopy dates while aligning stored NIFTY daily closes. The remaining work is to connect those
-signals to next-session entries and protective/time exits, then add the results API, UI,
-portfolio runner and walk-forward validation. No historical strategy result exists yet.
+**Phase 6 current implementation status.** Ledger runs now include execution reasons, open
+position state, exact parameters and an input SHA-256. The verified-history service rejects
+missing equity/NIFTY/archive sessions, inadequate warm-up and non-dividend corporate actions.
+Dividends are excluded (price returns); corporate-action position adjustment is pending.
+`python -m app.backtest --help` runs the five studies; bearer-protected `POST /api/backtest/runs`
+also executes one. Read APIs expose status, fills, daily equity and metrics; `/backtest` reads
+these actual results. Interrupted runs fail on process restart. Historical comparison evidence
+will be recorded separately after real-data runs; no Phase 6 or live-market gate is implied.
+Portfolio replay, walk-forward validation and full scanner/paper parity remain outstanding.
 
 **Phase 6 first cohort.** The initial historical studies are the five daily long signals:
 52-week breakout, EMA 50/200 cross, RSI bounce, Bollinger squeeze and relative strength.
