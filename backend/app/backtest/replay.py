@@ -42,6 +42,7 @@ class Replay:
     quantity: int
     cost_paisa: int
     equity_curve: tuple[int, ...]
+    equity_days: tuple[date, ...]
     max_drawdown: Fraction
     fills: tuple[Fill, ...]
     expired: int
@@ -61,6 +62,7 @@ def replay(sessions: Sequence[Session], capital_paisa: int, config: PaperParamet
     pending: Instruction | None = None
     symbol: str | None = None
     curve = [cash]
+    curve_days: list[date] = []
     fills: list[Fill] = []
     expired = 0
     previous: date | None = None
@@ -102,6 +104,7 @@ def replay(sessions: Sequence[Session], capital_paisa: int, config: PaperParamet
                 expired += 1
         equity = cash + quantity * bar.close
         curve.append(equity)
+        curve_days.append(session.day)
         peak = max(peak, equity)
         drawdown = max(drawdown, Fraction(peak - equity, peak))
         pending = session.instruction
@@ -113,5 +116,13 @@ def replay(sessions: Sequence[Session], capital_paisa: int, config: PaperParamet
             symbol = pending.symbol
     # The final close has no next session in this input, so no fill is inferred.
     return Replay(
-        cash, quantity, cost, tuple(curve), drawdown, tuple(fills), expired, pending is not None
+        cash,
+        quantity,
+        cost,
+        tuple(curve),
+        tuple(curve_days),
+        drawdown,
+        tuple(fills),
+        expired,
+        pending is not None,
     )
