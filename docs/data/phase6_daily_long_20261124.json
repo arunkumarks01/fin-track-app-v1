@@ -1,0 +1,2956 @@
+{
+  "evidence_date_ist": "2026-11-24",
+  "source_commit": "2aa97a604c662c43676fed70459fe939006c0b6b",
+  "deployment": "https://fintrack.arunkumarks.com/backtest",
+  "scope": "20 independent fixed-share single-symbol studies; not a portfolio backtest",
+  "limitations": [
+    "Current selected universe; survivorship and selection bias",
+    "Four stocks, including two banks; no broad universe or independent out-of-sample validation",
+    "Price returns exclude dividend income and cash interest",
+    "Ten shares per request, so invested exposure differs by symbol",
+    "Non-dividend corporate actions rejected over warm-up and study window",
+    "Open positions marked, not realized or force-closed",
+    "V1 baseline trailing disabled; engine trailing support tested separately",
+    "Study entry-day protection and unclipped market slippage differ from legacy paper eligibility/clipping; full parity gate remains open"
+  ],
+  "runs": [
+    {
+      "run": {
+        "id": 1,
+        "strategy_id": "year_breakout_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:SBIN",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "year_breakout_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "year_breakout_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 20,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "51f8379f02ec431af8eaa1433c79b85bf5992516e54c2c0f04d4fa7ebe2a151c",
+          "signal_count": 22,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "year_breakout_long",
+            "mode": "swing",
+            "name": "52-week breakout",
+            "rules": [
+              {
+                "label": "Close beyond the preceding 252 sessions",
+                "observed": "close_paisa",
+                "previous": false,
+                "threshold": "prior_252_high_paisa",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "A daily close back inside the prior 252-session range."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:42:23.564189Z",
+        "completed_at": "2026-11-24T01:42:23.807945Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 10053315,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 1,
+        "ending_equity_paisa": 10053315,
+        "net_paisa": 53315,
+        "max_drawdown_numerator": 9058,
+        "max_drawdown_denominator": 679279,
+        "closed_trades": 4,
+        "wins": 2,
+        "losses": 2,
+        "gross_profit_paisa": 128397,
+        "gross_loss_paisa": 75082
+      },
+      "evidence": {
+        "fill_count": 8,
+        "equity_count": 469,
+        "total_fees_paisa": 11855,
+        "api_result_sha256": "ba32bcabeb211c2ef39ea387f2e6878e8ee443b685c70dbe18aa3b80849979a1",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 2,
+        "strategy_id": "ema_golden_cross_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:SBIN",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "ema_golden_cross_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "ema_golden_cross_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 20,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "51f8379f02ec431af8eaa1433c79b85bf5992516e54c2c0f04d4fa7ebe2a151c",
+          "signal_count": 2,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "ema_golden_cross_long",
+            "mode": "swing",
+            "name": "EMA 50/200 cross",
+            "rules": [
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "ema_50_paisa",
+                "previous": true,
+                "threshold": "ema_200_paisa",
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "ema_50_paisa",
+                "previous": false,
+                "threshold": "ema_200_paisa",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "EMA 50 crosses back through EMA 200."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:42:23.811083Z",
+        "completed_at": "2026-11-24T01:42:23.963091Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 10,
+          "cash_paisa": 8896533,
+          "cost_paisa": 1111519,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 2,
+        "ending_equity_paisa": 10061633,
+        "net_paisa": 61633,
+        "max_drawdown_numerator": 5625,
+        "max_drawdown_denominator": 2500087,
+        "closed_trades": 1,
+        "wins": 1,
+        "losses": 0,
+        "gross_profit_paisa": 8052,
+        "gross_loss_paisa": 0
+      },
+      "evidence": {
+        "fill_count": 3,
+        "equity_count": 469,
+        "total_fees_paisa": 4087,
+        "api_result_sha256": "5ffe75f8e8461d2d9dcaba555325d834095f7949da6cbb0803150db064fc45e8",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 3,
+        "strategy_id": "rsi_bounce_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:SBIN",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "rsi_bounce_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 800,
+            "strategy_id": "rsi_bounce_long",
+            "stop_loss_bps": 400,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 15,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "51f8379f02ec431af8eaa1433c79b85bf5992516e54c2c0f04d4fa7ebe2a151c",
+          "signal_count": 6,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "rsi_bounce_long",
+            "mode": "swing",
+            "name": "RSI bounce",
+            "rules": [
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "rsi_pct",
+                "previous": true,
+                "threshold": "rsi_low",
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "rsi_pct",
+                "previous": false,
+                "threshold": "rsi_low",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "RSI crosses back through the bounce threshold."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:42:23.965073Z",
+        "completed_at": "2026-11-24T01:42:24.119971Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 10180994,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 3,
+        "ending_equity_paisa": 10180994,
+        "net_paisa": 180994,
+        "max_drawdown_numerator": 35605,
+        "max_drawdown_denominator": 5101192,
+        "closed_trades": 6,
+        "wins": 5,
+        "losses": 1,
+        "gross_profit_paisa": 223997,
+        "gross_loss_paisa": 43003
+      },
+      "evidence": {
+        "fill_count": 12,
+        "equity_count": 469,
+        "total_fees_paisa": 16006,
+        "api_result_sha256": "a71e9b6cb4c98014f37254f66f682ccbbff68b16e785dcb9b1513c4c3b3559af",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 4,
+        "strategy_id": "bollinger_squeeze_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:SBIN",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "bollinger_squeeze_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "bollinger_squeeze_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 15,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "51f8379f02ec431af8eaa1433c79b85bf5992516e54c2c0f04d4fa7ebe2a151c",
+          "signal_count": 19,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "bollinger_squeeze_long",
+            "mode": "swing",
+            "name": "Daily Bollinger squeeze breakout",
+            "rules": [
+              {
+                "label": "Prior band width as a percentage of the midpoint",
+                "observed": "bollinger_width_pct",
+                "previous": true,
+                "threshold": "squeeze_width_pct",
+                "comparison": "<="
+              },
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "close_paisa",
+                "previous": true,
+                "threshold": "bollinger_upper_paisa",
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "close_paisa",
+                "previous": false,
+                "threshold": "bollinger_upper_paisa",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "A daily close back inside the Bollinger bands."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:42:24.122019Z",
+        "completed_at": "2026-11-24T01:42:24.259777Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 9970571,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 4,
+        "ending_equity_paisa": 9970571,
+        "net_paisa": -29429,
+        "max_drawdown_numerator": 96166,
+        "max_drawdown_denominator": 5021351,
+        "closed_trades": 12,
+        "wins": 6,
+        "losses": 6,
+        "gross_profit_paisa": 275884,
+        "gross_loss_paisa": 305313
+      },
+      "evidence": {
+        "fill_count": 24,
+        "equity_count": 469,
+        "total_fees_paisa": 33939,
+        "api_result_sha256": "772fd52a5ad0ce59a177d267d6dd3792d0288bc8a4d3a2458b28c845ffab160a",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 5,
+        "strategy_id": "relative_strength_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:SBIN",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "relative_strength_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "relative_strength_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 20,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "51f8379f02ec431af8eaa1433c79b85bf5992516e54c2c0f04d4fa7ebe2a151c",
+          "signal_count": 23,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "relative_strength_long",
+            "mode": "swing",
+            "name": "Relative strength vs NIFTY",
+            "rules": [
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "relative_strength_pct",
+                "previous": true,
+                "threshold": 0.0,
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "relative_strength_pct",
+                "previous": false,
+                "threshold": 0.0,
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "Relative strength crosses back through zero."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:42:24.262301Z",
+        "completed_at": "2026-11-24T01:42:24.398883Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 10,
+          "cash_paisa": 8993838,
+          "cost_paisa": 1092231,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 5,
+        "ending_equity_paisa": 10158938,
+        "net_paisa": 158938,
+        "max_drawdown_numerator": 132652,
+        "max_drawdown_denominator": 10088921,
+        "closed_trades": 13,
+        "wins": 8,
+        "losses": 5,
+        "gross_profit_paisa": 307350,
+        "gross_loss_paisa": 221281
+      },
+      "evidence": {
+        "fill_count": 27,
+        "equity_count": 469,
+        "total_fees_paisa": 36992,
+        "api_result_sha256": "380760d56d7be3a5651edf6479ce620e2367978d274596e5a64cea0b2607b2c5",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 6,
+        "strategy_id": "year_breakout_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:ICICIBANK",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "year_breakout_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "year_breakout_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 20,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "60283174adafe840c66384fa086fc54c6f601f9b44423a90ea0f62a87d648d44",
+          "signal_count": 9,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "year_breakout_long",
+            "mode": "swing",
+            "name": "52-week breakout",
+            "rules": [
+              {
+                "label": "Close beyond the preceding 252 sessions",
+                "observed": "close_paisa",
+                "previous": false,
+                "threshold": "prior_252_high_paisa",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "A daily close back inside the prior 252-session range."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:42:32.465238Z",
+        "completed_at": "2026-11-24T01:42:32.654810Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 10,
+          "cash_paisa": 8404866,
+          "cost_paisa": 1524616,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 6,
+        "ending_equity_paisa": 10044866,
+        "net_paisa": 44866,
+        "max_drawdown_numerator": 102153,
+        "max_drawdown_denominator": 10015066,
+        "closed_trades": 3,
+        "wins": 1,
+        "losses": 2,
+        "gross_profit_paisa": 8522,
+        "gross_loss_paisa": 79040
+      },
+      "evidence": {
+        "fill_count": 7,
+        "equity_count": 469,
+        "total_fees_paisa": 15084,
+        "api_result_sha256": "a000c627a03a55cc43eb44d127c50146d77f02636a0de2a4b26972f1731d43f7",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 7,
+        "strategy_id": "ema_golden_cross_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:ICICIBANK",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "ema_golden_cross_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "ema_golden_cross_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 20,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "60283174adafe840c66384fa086fc54c6f601f9b44423a90ea0f62a87d648d44",
+          "signal_count": 1,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "ema_golden_cross_long",
+            "mode": "swing",
+            "name": "EMA 50/200 cross",
+            "rules": [
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "ema_50_paisa",
+                "previous": true,
+                "threshold": "ema_200_paisa",
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "ema_50_paisa",
+                "previous": false,
+                "threshold": "ema_200_paisa",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "EMA 50 crosses back through EMA 200."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:42:32.657502Z",
+        "completed_at": "2026-11-24T01:42:32.815357Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 10010906,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 7,
+        "ending_equity_paisa": 10010906,
+        "net_paisa": 10906,
+        "max_drawdown_numerator": 42100,
+        "max_drawdown_denominator": 10047313,
+        "closed_trades": 1,
+        "wins": 1,
+        "losses": 0,
+        "gross_profit_paisa": 10906,
+        "gross_loss_paisa": 0
+      },
+      "evidence": {
+        "fill_count": 2,
+        "equity_count": 469,
+        "total_fees_paisa": 4164,
+        "api_result_sha256": "7e18a2ca18b593712824b37e6d123a99db7502fac66caab2c04aa880336ea333",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 8,
+        "strategy_id": "rsi_bounce_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:ICICIBANK",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "rsi_bounce_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 800,
+            "strategy_id": "rsi_bounce_long",
+            "stop_loss_bps": 400,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 15,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "60283174adafe840c66384fa086fc54c6f601f9b44423a90ea0f62a87d648d44",
+          "signal_count": 6,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "rsi_bounce_long",
+            "mode": "swing",
+            "name": "RSI bounce",
+            "rules": [
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "rsi_pct",
+                "previous": true,
+                "threshold": "rsi_low",
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "rsi_pct",
+                "previous": false,
+                "threshold": "rsi_low",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "RSI crosses back through the bounce threshold."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:42:32.817350Z",
+        "completed_at": "2026-11-24T01:42:32.961872Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 9964523,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 8,
+        "ending_equity_paisa": 9964523,
+        "net_paisa": -35477,
+        "max_drawdown_numerator": 233461,
+        "max_drawdown_denominator": 10117022,
+        "closed_trades": 6,
+        "wins": 3,
+        "losses": 3,
+        "gross_profit_paisa": 132778,
+        "gross_loss_paisa": 168255
+      },
+      "evidence": {
+        "fill_count": 12,
+        "equity_count": 469,
+        "total_fees_paisa": 22627,
+        "api_result_sha256": "ea467980140e6bc86e93c87b47932bfc37b9302237a35131f5de426c465ab69c",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 9,
+        "strategy_id": "bollinger_squeeze_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:ICICIBANK",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "bollinger_squeeze_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "bollinger_squeeze_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 15,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "60283174adafe840c66384fa086fc54c6f601f9b44423a90ea0f62a87d648d44",
+          "signal_count": 11,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "bollinger_squeeze_long",
+            "mode": "swing",
+            "name": "Daily Bollinger squeeze breakout",
+            "rules": [
+              {
+                "label": "Prior band width as a percentage of the midpoint",
+                "observed": "bollinger_width_pct",
+                "previous": true,
+                "threshold": "squeeze_width_pct",
+                "comparison": "<="
+              },
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "close_paisa",
+                "previous": true,
+                "threshold": "bollinger_upper_paisa",
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "close_paisa",
+                "previous": false,
+                "threshold": "bollinger_upper_paisa",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "A daily close back inside the Bollinger bands."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:42:32.963875Z",
+        "completed_at": "2026-11-24T01:42:33.108288Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 9937470,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 9,
+        "ending_equity_paisa": 9937470,
+        "net_paisa": -62530,
+        "max_drawdown_numerator": 166905,
+        "max_drawdown_denominator": 5024939,
+        "closed_trades": 10,
+        "wins": 2,
+        "losses": 8,
+        "gross_profit_paisa": 256709,
+        "gross_loss_paisa": 319239
+      },
+      "evidence": {
+        "fill_count": 20,
+        "equity_count": 469,
+        "total_fees_paisa": 40970,
+        "api_result_sha256": "8ff076f1444f0a57372cc01ee629fdbdca3a39f0c40895851e951012454e7d28",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 10,
+        "strategy_id": "relative_strength_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:ICICIBANK",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "relative_strength_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "relative_strength_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 20,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "60283174adafe840c66384fa086fc54c6f601f9b44423a90ea0f62a87d648d44",
+          "signal_count": 25,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "relative_strength_long",
+            "mode": "swing",
+            "name": "Relative strength vs NIFTY",
+            "rules": [
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "relative_strength_pct",
+                "previous": true,
+                "threshold": 0.0,
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "relative_strength_pct",
+                "previous": false,
+                "threshold": 0.0,
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "Relative strength crosses back through zero."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:42:33.110212Z",
+        "completed_at": "2026-11-24T01:42:33.255020Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 9811030,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 10,
+        "ending_equity_paisa": 9811030,
+        "net_paisa": -188970,
+        "max_drawdown_numerator": 102019,
+        "max_drawdown_denominator": 2010078,
+        "closed_trades": 14,
+        "wins": 3,
+        "losses": 11,
+        "gross_profit_paisa": 369531,
+        "gross_loss_paisa": 558501
+      },
+      "evidence": {
+        "fill_count": 28,
+        "equity_count": 469,
+        "total_fees_paisa": 54850,
+        "api_result_sha256": "4403c027b012b4490fc507f28ea8d6cced9f3eca2d75df3756e45cf647c63411",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 11,
+        "strategy_id": "year_breakout_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:ASIANPAINT",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "year_breakout_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "year_breakout_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 20,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "bf079d62cfb1df6ac8be547a8483421b6d2e2934ed7cb31a81851104e318f1f3",
+          "signal_count": 2,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "year_breakout_long",
+            "mode": "swing",
+            "name": "52-week breakout",
+            "rules": [
+              {
+                "label": "Close beyond the preceding 252 sessions",
+                "observed": "close_paisa",
+                "previous": false,
+                "threshold": "prior_252_high_paisa",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "A daily close back inside the prior 252-session range."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:43:22.501052Z",
+        "completed_at": "2026-11-24T01:43:22.687805Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 9844891,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 11,
+        "ending_equity_paisa": 9844891,
+        "net_paisa": -155109,
+        "max_drawdown_numerator": 211270,
+        "max_drawdown_denominator": 10056161,
+        "closed_trades": 1,
+        "wins": 0,
+        "losses": 1,
+        "gross_profit_paisa": 0,
+        "gross_loss_paisa": 155109
+      },
+      "evidence": {
+        "fill_count": 2,
+        "equity_count": 469,
+        "total_fees_paisa": 8319,
+        "api_result_sha256": "6a360d13be27dc0e5c1e4144f9032b863fa44f4e9b6ae9a0ac43735ad8f36e2e",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 12,
+        "strategy_id": "ema_golden_cross_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:ASIANPAINT",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "ema_golden_cross_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "ema_golden_cross_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 20,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "bf079d62cfb1df6ac8be547a8483421b6d2e2934ed7cb31a81851104e318f1f3",
+          "signal_count": 3,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "ema_golden_cross_long",
+            "mode": "swing",
+            "name": "EMA 50/200 cross",
+            "rules": [
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "ema_50_paisa",
+                "previous": true,
+                "threshold": "ema_200_paisa",
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "ema_50_paisa",
+                "previous": false,
+                "threshold": "ema_200_paisa",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "EMA 50 crosses back through EMA 200."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:43:22.690197Z",
+        "completed_at": "2026-11-24T01:43:22.852948Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 10127971,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 12,
+        "ending_equity_paisa": 10127971,
+        "net_paisa": 127971,
+        "max_drawdown_numerator": 145306,
+        "max_drawdown_denominator": 10009703,
+        "closed_trades": 3,
+        "wins": 2,
+        "losses": 1,
+        "gross_profit_paisa": 263574,
+        "gross_loss_paisa": 135603
+      },
+      "evidence": {
+        "fill_count": 6,
+        "equity_count": 469,
+        "total_fees_paisa": 23029,
+        "api_result_sha256": "13a790efdb77e39f08563352cda65f511f3856720397a2fd3588e7ebcb1c7afb",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 13,
+        "strategy_id": "rsi_bounce_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:ASIANPAINT",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "rsi_bounce_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 800,
+            "strategy_id": "rsi_bounce_long",
+            "stop_loss_bps": 400,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 15,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "bf079d62cfb1df6ac8be547a8483421b6d2e2934ed7cb31a81851104e318f1f3",
+          "signal_count": 11,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "rsi_bounce_long",
+            "mode": "swing",
+            "name": "RSI bounce",
+            "rules": [
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "rsi_pct",
+                "previous": true,
+                "threshold": "rsi_low",
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "rsi_pct",
+                "previous": false,
+                "threshold": "rsi_low",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "RSI crosses back through the bounce threshold."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:43:22.854814Z",
+        "completed_at": "2026-11-24T01:43:23.001535Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 10069482,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 13,
+        "ending_equity_paisa": 10069482,
+        "net_paisa": 69482,
+        "max_drawdown_numerator": 100421,
+        "max_drawdown_denominator": 3414197,
+        "closed_trades": 8,
+        "wins": 3,
+        "losses": 5,
+        "gross_profit_paisa": 495359,
+        "gross_loss_paisa": 425877
+      },
+      "evidence": {
+        "fill_count": 16,
+        "equity_count": 469,
+        "total_fees_paisa": 54348,
+        "api_result_sha256": "4938279b3bbc37300aa0fdcdbdb4043e9957b55de36fca65290838a2c07517a7",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 14,
+        "strategy_id": "bollinger_squeeze_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:ASIANPAINT",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "bollinger_squeeze_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "bollinger_squeeze_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 15,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "bf079d62cfb1df6ac8be547a8483421b6d2e2934ed7cb31a81851104e318f1f3",
+          "signal_count": 14,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "bollinger_squeeze_long",
+            "mode": "swing",
+            "name": "Daily Bollinger squeeze breakout",
+            "rules": [
+              {
+                "label": "Prior band width as a percentage of the midpoint",
+                "observed": "bollinger_width_pct",
+                "previous": true,
+                "threshold": "squeeze_width_pct",
+                "comparison": "<="
+              },
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "close_paisa",
+                "previous": true,
+                "threshold": "bollinger_upper_paisa",
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "close_paisa",
+                "previous": false,
+                "threshold": "bollinger_upper_paisa",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "A daily close back inside the Bollinger bands."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:43:23.003709Z",
+        "completed_at": "2026-11-24T01:43:23.151685Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 10,
+          "cash_paisa": 7774286,
+          "cost_paisa": 2430259,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 14,
+        "ending_equity_paisa": 10382586,
+        "net_paisa": 382586,
+        "max_drawdown_numerator": 49165,
+        "max_drawdown_denominator": 2563607,
+        "closed_trades": 9,
+        "wins": 7,
+        "losses": 2,
+        "gross_profit_paisa": 504503,
+        "gross_loss_paisa": 299958
+      },
+      "evidence": {
+        "fill_count": 19,
+        "equity_count": 469,
+        "total_fees_paisa": 71474,
+        "api_result_sha256": "7d40c6ba1508fe32860c91a53d9d75901b312cfdddd64d20943b3ee6dfa0a11a",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 15,
+        "strategy_id": "relative_strength_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:ASIANPAINT",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "relative_strength_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "relative_strength_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 20,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "bf079d62cfb1df6ac8be547a8483421b6d2e2934ed7cb31a81851104e318f1f3",
+          "signal_count": 22,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "relative_strength_long",
+            "mode": "swing",
+            "name": "Relative strength vs NIFTY",
+            "rules": [
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "relative_strength_pct",
+                "previous": true,
+                "threshold": 0.0,
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "relative_strength_pct",
+                "previous": false,
+                "threshold": 0.0,
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "Relative strength crosses back through zero."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:43:23.153991Z",
+        "completed_at": "2026-11-24T01:43:23.305445Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 10,
+          "cash_paisa": 6740222,
+          "cost_paisa": 2624347,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 15,
+        "ending_equity_paisa": 9348522,
+        "net_paisa": -651478,
+        "max_drawdown_numerator": 682989,
+        "max_drawdown_denominator": 10003511,
+        "closed_trades": 14,
+        "wins": 3,
+        "losses": 11,
+        "gross_profit_paisa": 535604,
+        "gross_loss_paisa": 1171035
+      },
+      "evidence": {
+        "fill_count": 29,
+        "equity_count": 469,
+        "total_fees_paisa": 103838,
+        "api_result_sha256": "3cbff2dbc41abbe1c3366ccfb261d58e6c9b2524a5f8054d31639838e1673173",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 16,
+        "strategy_id": "year_breakout_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:SUNPHARMA",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "year_breakout_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "year_breakout_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 20,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "0d8efde523e7442e1fb4b004014f232316712923194f39dcfa26ad68dd1ea7c1",
+          "signal_count": 5,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "year_breakout_long",
+            "mode": "swing",
+            "name": "52-week breakout",
+            "rules": [
+              {
+                "label": "Close beyond the preceding 252 sessions",
+                "observed": "close_paisa",
+                "previous": false,
+                "threshold": "prior_252_high_paisa",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "A daily close back inside the prior 252-session range."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:43:23.563910Z",
+        "completed_at": "2026-11-24T01:43:23.750590Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 9904462,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 16,
+        "ending_equity_paisa": 9904462,
+        "net_paisa": -95538,
+        "max_drawdown_numerator": 152411,
+        "max_drawdown_denominator": 10026970,
+        "closed_trades": 2,
+        "wins": 1,
+        "losses": 1,
+        "gross_profit_paisa": 4528,
+        "gross_loss_paisa": 100066
+      },
+      "evidence": {
+        "fill_count": 4,
+        "equity_count": 469,
+        "total_fees_paisa": 11078,
+        "api_result_sha256": "7fee8a370e2163b506c07fe21412dc9ac084a760a6a0a724b5f6ba659e772bf1",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 17,
+        "strategy_id": "ema_golden_cross_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:SUNPHARMA",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "ema_golden_cross_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "ema_golden_cross_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 20,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "0d8efde523e7442e1fb4b004014f232316712923194f39dcfa26ad68dd1ea7c1",
+          "signal_count": 3,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "ema_golden_cross_long",
+            "mode": "swing",
+            "name": "EMA 50/200 cross",
+            "rules": [
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "ema_50_paisa",
+                "previous": true,
+                "threshold": "ema_200_paisa",
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "ema_50_paisa",
+                "previous": false,
+                "threshold": "ema_200_paisa",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "EMA 50 crosses back through EMA 200."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:43:23.753021Z",
+        "completed_at": "2026-11-24T01:43:23.907301Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 10,
+          "cash_paisa": 8200335,
+          "cost_paisa": 1918911,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 17,
+        "ending_equity_paisa": 10085235,
+        "net_paisa": 85235,
+        "max_drawdown_numerator": 65792,
+        "max_drawdown_denominator": 10063991,
+        "closed_trades": 2,
+        "wins": 2,
+        "losses": 0,
+        "gross_profit_paisa": 119246,
+        "gross_loss_paisa": 0
+      },
+      "evidence": {
+        "fill_count": 5,
+        "equity_count": 469,
+        "total_fees_paisa": 13335,
+        "api_result_sha256": "cbe55b4aa14a6fbf483adec3ce5dc3bedfc4b1f2ddb6c144f2eb33b996fd8187",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 18,
+        "strategy_id": "rsi_bounce_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:SUNPHARMA",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "rsi_bounce_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 800,
+            "strategy_id": "rsi_bounce_long",
+            "stop_loss_bps": 400,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 15,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "0d8efde523e7442e1fb4b004014f232316712923194f39dcfa26ad68dd1ea7c1",
+          "signal_count": 4,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "rsi_bounce_long",
+            "mode": "swing",
+            "name": "RSI bounce",
+            "rules": [
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "rsi_pct",
+                "previous": true,
+                "threshold": "rsi_low",
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "rsi_pct",
+                "previous": false,
+                "threshold": "rsi_low",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "RSI crosses back through the bounce threshold."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:43:23.909695Z",
+        "completed_at": "2026-11-24T01:43:24.073611Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 10118006,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 18,
+        "ending_equity_paisa": 10118006,
+        "net_paisa": 118006,
+        "max_drawdown_numerator": 36249,
+        "max_drawdown_denominator": 5000000,
+        "closed_trades": 3,
+        "wins": 2,
+        "losses": 1,
+        "gross_profit_paisa": 190504,
+        "gross_loss_paisa": 72498
+      },
+      "evidence": {
+        "fill_count": 6,
+        "equity_count": 469,
+        "total_fees_paisa": 14584,
+        "api_result_sha256": "bd51d8c8c2ed05417c33687d1ba03e9f4254345e7a958a18902d14e9a99e0664",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 19,
+        "strategy_id": "bollinger_squeeze_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:SUNPHARMA",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "bollinger_squeeze_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "bollinger_squeeze_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 15,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "0d8efde523e7442e1fb4b004014f232316712923194f39dcfa26ad68dd1ea7c1",
+          "signal_count": 13,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "bollinger_squeeze_long",
+            "mode": "swing",
+            "name": "Daily Bollinger squeeze breakout",
+            "rules": [
+              {
+                "label": "Prior band width as a percentage of the midpoint",
+                "observed": "bollinger_width_pct",
+                "previous": true,
+                "threshold": "squeeze_width_pct",
+                "comparison": "<="
+              },
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "close_paisa",
+                "previous": true,
+                "threshold": "bollinger_upper_paisa",
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "close_paisa",
+                "previous": false,
+                "threshold": "bollinger_upper_paisa",
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "A daily close back inside the Bollinger bands."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:43:24.075489Z",
+        "completed_at": "2026-11-24T01:43:24.218570Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 10,
+          "cash_paisa": 8026366,
+          "cost_paisa": 1826731,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 19,
+        "ending_equity_paisa": 9911266,
+        "net_paisa": -88734,
+        "max_drawdown_numerator": 212381,
+        "max_drawdown_denominator": 10065478,
+        "closed_trades": 8,
+        "wins": 3,
+        "losses": 5,
+        "gross_profit_paisa": 269188,
+        "gross_loss_paisa": 416091
+      },
+      "evidence": {
+        "fill_count": 17,
+        "equity_count": 469,
+        "total_fees_paisa": 45804,
+        "api_result_sha256": "2eacd4fac96fe12f3e2d54d0449d037097c6e81fcbb6fde79859841292fa0468",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    },
+    {
+      "run": {
+        "id": 20,
+        "strategy_id": "relative_strength_long",
+        "strategy_revision": 1,
+        "symbol": "NSE:SUNPHARMA",
+        "start_day": "2025-01-01",
+        "end_day": "2026-11-20",
+        "capital_paisa": 10000000,
+        "assumptions": {
+          "spec": {
+            "id": "relative_strength_long_v1",
+            "entry": "next_session_market",
+            "revision": 1,
+            "target_bps": 1000,
+            "strategy_id": "relative_strength_long",
+            "stop_loss_bps": 500,
+            "trailing_stop_bps": 0,
+            "max_holding_sessions": 20,
+            "one_position_per_symbol": true
+          },
+          "entry": "previous final signal -> next session open plus adverse slippage",
+          "exits": "entry-day protection; stop first on double touch; trail effective next session",
+          "paper": {
+            "gst_bps": 1800,
+            "stamp_ppm": 150,
+            "volume_bps": 50,
+            "buy_tax_ppm": 1000,
+            "exchange_ppm": 30,
+            "sell_tax_ppm": 1000,
+            "slippage_bps": 5,
+            "brokerage_ppm": 300,
+            "regulator_ppm": 1,
+            "brokerage_cap_paisa": 2000
+          },
+          "periods": {
+            "adx": 14,
+            "atr": 14,
+            "ema": [
+              9,
+              20,
+              21,
+              50,
+              200
+            ],
+            "roc": 12,
+            "rsi": 14,
+            "sma": [
+              20,
+              50,
+              200
+            ],
+            "bands": 20,
+            "volume": 20,
+            "keltner": 20,
+            "donchian": [
+              20,
+              252
+            ],
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "stochastic": 14,
+            "macd_signal": 9,
+            "bands_deviations": 2,
+            "relative_strength": 20,
+            "stochastic_smooth": 3,
+            "keltner_atr_multiple": 2,
+            "supertrend_atr_multiple": 3
+          },
+          "quantity": 10,
+          "slippage": "paper adverse rounding; no favourable clipping to later daily high/low",
+          "liquidity": "shared daily participation budget; partial exit remainder at next opens",
+          "time_exit": "open after max_holding_sessions completed sessions",
+          "end_policy": "open positions marked at final close, no forced sale",
+          "study_bars": 469,
+          "price_basis": "NSE as-traded; price return excludes dividends; non-dividend actions rejected",
+          "warmup_bars": 800,
+          "input_sha256": "0d8efde523e7442e1fb4b004014f232316712923194f39dcfa26ad68dd1ea7c1",
+          "signal_count": 19,
+          "input_last_day": "2026-11-20",
+          "engine_revision": 1,
+          "input_first_day": "2021-10-11",
+          "warmup_requested": 800,
+          "signal_definition": {
+            "id": "relative_strength_long",
+            "mode": "swing",
+            "name": "Relative strength vs NIFTY",
+            "rules": [
+              {
+                "label": "Previous candle was on the other side",
+                "observed": "relative_strength_pct",
+                "previous": true,
+                "threshold": 0.0,
+                "comparison": "<="
+              },
+              {
+                "label": "Latest candle crossed the threshold",
+                "observed": "relative_strength_pct",
+                "previous": false,
+                "threshold": 0.0,
+                "comparison": ">"
+              }
+            ],
+            "revision": 1,
+            "direction": "long",
+            "invalidation": "Relative strength crosses back through zero."
+          },
+          "signal_thresholds": {
+            "rsi_low": 30.0,
+            "rsi_high": 70.0,
+            "squeeze_width_pct": 10.0
+          }
+        },
+        "status": "completed",
+        "detail": null,
+        "created_at": "2026-11-24T01:43:24.220517Z",
+        "completed_at": "2026-11-24T01:43:24.369053Z",
+        "result_state": {
+          "expired": 0,
+          "quantity": 0,
+          "cash_paisa": 9777546,
+          "cost_paisa": 0,
+          "pending_at_end": false
+        }
+      },
+      "metrics": {
+        "run_id": 20,
+        "ending_equity_paisa": 9777546,
+        "net_paisa": -222454,
+        "max_drawdown_numerator": 372378,
+        "max_drawdown_denominator": 10052971,
+        "closed_trades": 11,
+        "wins": 5,
+        "losses": 6,
+        "gross_profit_paisa": 325196,
+        "gross_loss_paisa": 547650
+      },
+      "evidence": {
+        "fill_count": 22,
+        "equity_count": 469,
+        "total_fees_paisa": 56904,
+        "api_result_sha256": "2ea7d566fef9871d8fee71b6df572766f7645d9ff20bb3186c188bf4f0e3722d",
+        "independent_checks": "cash, holding quantity, closed outcomes, marked net return and chronological drawdown reconciled from API fills/equity"
+      }
+    }
+  ],
+  "forward_paper_comparison": {
+    "primary_exploratory_candidate": "rsi_bounce_long_v1 across the four studied symbols, for further data collection only",
+    "reason": "Positive marked net in 3/4 symbols with 23 closed outcomes; ICICIBANK negative. Sparse per-symbol samples and retrospective selection prevent validation.",
+    "secondary_observation": "ema_golden_cross_long_v1 positive marked net in 4/4, but only 7 closed outcomes and open holdings in SBIN/SUNPHARMA; defer promotion.",
+    "not_prioritised": [
+      "year_breakout_long_v1: 2/4 positive marked net; ICICIBANK closed-outcome PF 0.108 while open position makes marked net positive",
+      "bollinger_squeeze_long_v1: 1/4 positive marked net; ASIANPAINT has an open position",
+      "relative_strength_long_v1: 1/4 positive marked net, losses in ICICIBANK/ASIANPAINT/SUNPHARMA"
+    ],
+    "promotion": "No strategy validated or automatically promoted. No forward paper accounts/orders created by these studies."
+  },
+  "validation": {
+    "backend_offline_tests": 529,
+    "backend_test_database_tests": 180,
+    "backend_targeted_backtest_rerun": 4,
+    "frontend_tests": 114,
+    "checks": [
+      "Ruff",
+      "Ruff format",
+      "strict mypy",
+      "ESLint",
+      "Prettier",
+      "TypeScript",
+      "local Next.js production build",
+      "VPS Next.js production build"
+    ],
+    "deployment_http": {
+      "backend_strategies": 200,
+      "frontend_backtest": 200
+    },
+    "paper_mode": true,
+    "applied_migration_checksums_verified": 23,
+    "browser": [
+      "Desktop run selection, metrics and chronological equity",
+      "Mobile 390px viewport, assumptions and fill expansion",
+      "Browser console: zero errors and warnings"
+    ]
+  }
+}

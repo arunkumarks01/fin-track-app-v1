@@ -57,6 +57,14 @@ unclipped adverse market slippage are explicit study assumptions; full paper/sca
 is not claimed. Missing sessions, insufficient warm-up and non-dividend corporate actions
 fail the run. Open positions remain marked, not forced closed. Dividend income is excluded.
 
-Next: execute and document same-input real-history comparisons, then expand to portfolio and
-walk-forward testing. Forward-paper candidates require adequate outcomes across more than a
-small selected symbol sample. Phase 6 completion and live-market acceptance remain unproven.
+Production runs 1–20 now cover all five strategies on SBIN, ICICIBANK, ASIANPAINT and
+SUNPHARMA over 2025-01-01–2026-11-20, using 800 warm-up/469 study bars, ₹1,00,000 and ten
+shares per request. See BUILD_PLAN.md and `docs/data/phase6_daily_long_20261124.json` for the
+comparison, input hashes, audit and limitations. RSI bounce is an exploratory forward-data
+candidate (3/4 positive marked outcomes, 23 closed trades); EMA's 4/4 positives have just seven
+closed trades. Neither is validated or automatically promoted. No forward paper orders were
+created. Backend/frontend release is deployed at `/backtest`; applied checksums are preserved.
+
+Next: broader, predeclared symbol coverage, independent out-of-sample and portfolio evaluation,
+corporate-action/dividend handling, and full scanner/paper parity. Existing v1 assumptions must
+stay versioned. Phase 6 completion and live-market acceptance remain unproven.

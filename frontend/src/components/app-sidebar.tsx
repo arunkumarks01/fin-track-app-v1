@@ -40,7 +40,7 @@ const NAV = [
   { href: "/options", label: "Options", icon: Workflow },
   { href: "/candidates", label: "Candidates", icon: ListFilter },
   { href: "/paper", label: "Paper trading", icon: BookOpen },
-  { href: "/backtest", label: "Backtest learning", icon: ChartNoAxesCombined },
+  { href: "/backtest", label: "Backtest results", icon: ChartNoAxesCombined },
   { href: "/learn", label: "Learn", icon: GraduationCap },
 ];
 const SYSTEM = [{ href: "/admin", label: "Admin · Health", icon: ShieldCheck }];

@@ -147,7 +147,7 @@ Dividends are excluded (price returns); corporate-action position adjustment is 
 `python -m app.backtest --help` runs the five studies; bearer-protected `POST /api/backtest/runs`
 also executes one. Read APIs expose status, fills, daily equity and metrics; `/backtest` reads
 these actual results. Interrupted runs fail on process restart. Historical comparison evidence
-will be recorded separately after real-data runs; no Phase 6 or live-market gate is implied.
+is recorded in `docs/data/phase6_daily_long_20261124.json`; no Phase 6 or live-market gate is implied.
 Portfolio replay, walk-forward validation and full scanner/paper parity remain outstanding.
 
 **Phase 6 first cohort.** The initial historical studies are the five daily long signals:
@@ -156,6 +156,39 @@ Each uses a versioned baseline with next-session entry, explicit stop/target and
 holding-session assumptions. These assumptions are research inputs, not calibrated claims;
 results must record the exact strategy revision before they can be compared or promoted to
 forward paper testing.
+
+**First historical comparison — 2026-11-24.** Production ledger runs 1–20 completed:
+five v1 strategies × SBIN, ICICIBANK, ASIANPAINT and SUNPHARMA, 2025-01-01 through
+2026-11-20, 469 verified study sessions plus 800 warm-up bars per run. Each independent
+run starts with ₹1,00,000 and requests ten shares; fees use the recorded paper defaults.
+These are price returns excluding dividends and interest, with idle cash and different
+invested exposure by symbol. The table shows net marked return in rupees (closed trades).
+
+| Strategy | SBIN | ICICIBANK | ASIANPAINT | SUNPHARMA |
+|---|---:|---:|---:|---:|
+| 52-week breakout | +533.15 (4) | +448.66 (3, open) | −1,551.09 (1) | −955.38 (2) |
+| EMA 50/200 cross | +616.33 (1, open) | +109.06 (1) | +1,279.71 (3) | +852.35 (2, open) |
+| RSI bounce | +1,809.94 (6) | −354.77 (6) | +694.82 (8) | +1,180.06 (3) |
+| Bollinger squeeze | −294.29 (12) | −625.30 (10) | +3,825.86 (9, open) | −887.34 (8, open) |
+| Relative strength | +1,589.38 (13, open) | −1,889.70 (14) | −6,514.78 (14, open) | −2,224.54 (11) |
+
+**Forward-paper comparison:** RSI bounce is the first *exploratory data-collection* candidate
+across all four studied symbols: positive marked net in three symbols and 23 closed
+outcomes, but ICICIBANK loses and per-symbol samples are small. EMA is positive in all four,
+but has only seven closed outcomes and open holdings: observe rather than promote. Breakout
+has sparse/mixed outcomes; its ICICIBANK marked gain hides a closed-outcome profit factor of
+0.108. Squeeze and relative strength each lose in three of four symbols. Do not select only
+the winning symbol after seeing this sample. No strategy has been validated or automatically
+promoted, and no forward paper account/order was created. Four selected current-universe
+stocks (two banks), rejected unsupported actions, excluded dividends, no independent
+out-of-sample/portfolio evaluation and incomplete full parity limit these results.
+
+The committed JSON records exact assumptions, signal definitions, input hashes, run metrics,
+open state and full API-response hashes. Cash, holdings, closed outcomes, net equity and
+chronological drawdown were independently reconciled from all 20 API fill/equity responses.
+The deployed `/backtest` view was inspected on desktop/mobile, including selection and
+expanded assumptions/fills, with no browser console errors/warnings. Migration 0022's
+checksum remained unchanged; 0023 adds only execution audit fields. PAPER_MODE remains true.
 
 **Phase 7 — Options multi-leg (~2 wk).** Spreads, iron condor, straddle/strangle, covered
 call, calendar; payoff-diagram engine; phase-unlock progression. *Gate:* payoff math

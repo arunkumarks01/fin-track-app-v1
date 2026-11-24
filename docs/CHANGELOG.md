@@ -15,8 +15,20 @@
   A fixture advisory lock now serializes independent destructive `_test` invocations.
 - Validation: backend Ruff/format/mypy and 529 offline tests pass; the serial VPS `_test`
   integration suite passes all 180 tests. Frontend lint/format/types, 114 tests, and production
-  builds locally and on the VPS staging release pass. Historical/deployment evidence follows
-  once observed. This is not Phase 6 completion or live-market acceptance.
+  builds locally and on the VPS staging release pass. A targeted four-test backtest integration
+  rerun also passes after recording the exact signal definitions/thresholds.
+- Pushed `2aa97a6` and deployed backend/frontend in a new VPS release, keeping prior deployment
+  files. Both feature endpoints return 200; PAPER_MODE=true. Migration 0022's checksum is
+  unchanged and 0023 is applied; all 23 applied checksums match source. Production studies 1–20 completed: five strategies × four
+  symbols, 2025-01-01–2026-11-20, 800 warm-up/469 study sessions, ₹1,00,000 and ten shares.
+- Committed `docs/data/phase6_daily_long_20261124.json` with exact assumptions/definitions,
+  input/result hashes, metrics, open state and independent API reconciliation. BUILD_PLAN.md
+  compares every result. RSI bounce is an exploratory forward-data candidate, not a validated
+  strategy; EMA's positive sample has only seven closed trades. No strategy was promoted and
+  no forward paper orders were created. Portfolio, independent out-of-sample and full parity
+  gates remain open; this is not Phase 6 completion or live-market acceptance.
+- Verified desktop/mobile results, run selection, expanded assumptions/fills and the equity
+  curve with no browser console errors/warnings. Renamed navigation to “Backtest results”.
 
 ## [Unreleased] — Phase 6 historical run ledger and inputs
 

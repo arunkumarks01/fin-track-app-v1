@@ -54,7 +54,13 @@ Frontend checks distinguish failed/missing results from zero returns and reject 
 2026-11-24 validation: 529 offline backend tests and 180 `_test` integration tests passed;
 Ruff, formatting and strict mypy passed. Frontend lint, format, types, 114 tests and production
 builds locally and on the VPS staging release passed.
-These checks do not close the P6 gate: real-history evidence, portfolio replay, walk-forward,
+Production evidence: 20 completed same-input studies (five specs × four symbols), with 800
+warm-up/469 study sessions each. All API results reconciled cash, holdings, closed outcomes,
+marked net and exact chronological drawdown from fills/equity. The committed JSON stores
+input and API-result fingerprints. Browser inspection covers real run selection, assumptions,
+fills and the equity curve; production backend/frontend endpoints return 200. This is historical
+software evidence, not live-market acceptance.
+These checks do not close the P6 gate: broad-universe evidence, portfolio replay, walk-forward,
 full scanner/paper parity and live-market acceptance require separate evidence.
 - **P7 options:** payoff math validated; multi-leg fills + margin modeled.
 - **P8 frontend:** tsc clean; one formatter (no local ones); one sentiment value across all surfaces; no UI number contradicts the backend; a11y smoke.
