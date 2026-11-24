@@ -38,6 +38,12 @@ in-memory cache fixture. These make every test deterministic.
 - **P4 risk:** sizing reproducible; Realistic-mode caps enforced; **Learning mode never blocks + always shows risk** (asserted).
 - **P5 sandbox:** kill-switch/pause blocks all order paths + survives restart; idempotency rejects duplicates; paper P&L == hand-computed cost example.
 - **P6 backtest:** **chronological** max-drawdown == hand value; **backtest↔live↔paper parity** green; zero-edge fixture net-negative after costs.
+
+Phase 6 foundation checks currently cover causal next-session replay, shared paper fees and
+cost basis, marked-equity performance metrics, immutable run-input/result persistence on the
+dedicated `_test` database, and materialised daily-long signal definitions. They do not yet
+close the P6 gate: strategy execution, stops/targets/trailing/time exits, real-history runs,
+portfolio replay, walk-forward and results API/UI remain required.
 - **P7 options:** payoff math validated; multi-leg fills + margin modeled.
 - **P8 frontend:** tsc clean; one formatter (no local ones); one sentiment value across all surfaces; no UI number contradicts the backend; a11y smoke.
 - **P9 ops:** restore-from-backup tested; dead-man's-switch fires on a stalled scheduler.

@@ -46,3 +46,11 @@ option-chain probe, confirm intraday freshness and scanner inputs, validate live
 snapshots and F&O/reference coverage, check storage/retention behavior on a test dataset,
 and record measured evidence against each phase gate. Live news and other external feeds
 need separate acceptance if enabled. No real broker orders are authorized by this handoff.
+
+## Phase 6 follow-on status
+
+The follow-on backtest foundation is present: versioned daily-long study specifications,
+verified historical daily-bar/NIFTY alignment, causal replay, performance metrics and a durable
+run ledger. It is not a runnable strategy service yet. Connect signals to next-session orders
+and protective/time exits, persist actual historical runs, then add the results API/UI before
+using outputs to select forward-paper candidates.

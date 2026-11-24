@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased] — Phase 6 historical run ledger and inputs
+
+- Added migration 0022 for immutable backtest runs, fills, marked daily equity and performance
+  metrics. A dedicated `_test` database integration check proves a queued run persists its
+  inputs and causal replay result atomically.
+- Added the first five daily-long signal materialiser and verified-history loader. Stock bars
+  come only from NSE-verified bhavcopy dates; NIFTY daily closes align the relative-strength
+  signal. These modules do not yet execute historical trades or expose user-visible results.
+
 ## [Unreleased] — Phase 6 replay performance foundation
 
 - Added a deterministic performance summary for causal replay output: marked ending equity,

@@ -139,6 +139,13 @@ without calling an open position a completed trade. It is not yet a strategy bac
 an API: data coverage, portfolio replay, live-scanner parity, walk-forward evaluation and
 the full exit gate remain outstanding.
 
+**Phase 6 current implementation status.** Run inputs, fills, daily marked equity and metrics
+now persist in the Phase 6 ledger. The first cohort's signal materialiser uses the same daily
+indicator/rule definitions as scoring, and its loader reads stock prices only from NSE-verified
+bhavcopy dates while aligning stored NIFTY daily closes. The remaining work is to connect those
+signals to next-session entries and protective/time exits, then add the results API, UI,
+portfolio runner and walk-forward validation. No historical strategy result exists yet.
+
 **Phase 6 first cohort.** The initial historical studies are the five daily long signals:
 52-week breakout, EMA 50/200 cross, RSI bounce, Bollinger squeeze and relative strength.
 Each uses a versioned baseline with next-session entry, explicit stop/target and maximum
